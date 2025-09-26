@@ -13,3 +13,4 @@ Rendang OS
 - Cara Run
 - Fitur yang Dibuat
 - Maskot Kelompok Kalian
+Rendang
