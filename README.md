@@ -8,6 +8,7 @@ Template dasar untuk Tugas Besar IF2130 - Sistem Operasi 2025/2026
 Pada file README, minimal kalian harus memiliki hal berikut:
 
 - Nama Kelompok
+Rendang OS
 - Daftar Isi
 - Cara Run
 - Fitur yang Dibuat
