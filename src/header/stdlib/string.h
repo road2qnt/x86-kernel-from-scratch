@@ -51,5 +51,6 @@ int memcmp(const void *s1, const void *s2, size_t n);
  * @return Pointer dest
 */
 void *memmove(void *dest, const void *src, size_t n);
+void* memset16(void *ptr, uint16_t value, uint32_t num);
 
 #endif
