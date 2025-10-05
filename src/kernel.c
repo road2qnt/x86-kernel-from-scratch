@@ -15,7 +15,7 @@ void kernel_setup(void) {
     
     // 2. Aktifkan interrupt keyboard secara spesifik
     activate_keyboard_interrupt();
-
+    keyboard_state_activate();
     // 3. Bersihkan layar dan siapkan posisi tulis
     framebuffer_clear();
     uint8_t row = 0, col = 0;
