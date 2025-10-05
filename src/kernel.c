@@ -5,23 +5,36 @@
 #include "header/kernel-entrypoint.h"
 #include "header/stdlib/boolean.h"
 #include "header/text/framebuffer.h"
+#include "header/text/keyboard.h"
 
 void kernel_setup(void) {
-    // 1. Muat GDT
+    // 1. Inisialisasi semua sistem dasar
     load_gdt(&_gdt_gdtr);
-    
-    // 2. Remap PIC
     pic_remap();
-    
-    // 3. Inisialisasi & Muat IDT
     initialize_idt();
+    
+    // 2. Aktifkan interrupt keyboard secara spesifik
+    activate_keyboard_interrupt();
 
-    // 4. Tes dengan memicu interrupt nomor 3 (Breakpoint)
-    __asm__("int $0x3");
+    // 3. Bersihkan layar dan siapkan posisi tulis
+    framebuffer_clear();
+    uint8_t row = 0, col = 0;
 
-    // Baris ini seharusnya tidak akan pernah dieksekusi jika debugger aktif
-    framebuffer_write(0, 0, 'S', WHITE, BLACK); 
+    // 4. Loop utama: cek input, tulis ke layar
+    while (true) {
+        char c = 0;
+        get_keyboard_buffer(&c); // Ambil karakter dari buffer
 
-    while(true);
+        if (c != 0) {
+            // Jika ada karakter, tampilkan ke layar
+            framebuffer_write(row, col, c, WHITE, BLACK);
+            col++; // Pindahin kursor ke kanan
+            if (col >= FRAMEBUFFER_WIDTH) {
+                col = 0;
+                row++;
+            }
+            framebuffer_set_cursor(row, col);
+        }
+    }
 }
 

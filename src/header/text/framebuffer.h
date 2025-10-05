@@ -2,9 +2,8 @@
 #define _FRAMEBUFFER_H
 
 #include <stdint.h>
-#include <stdbool.h>
 #include <stddef.h>
-
+#include <stdbool.h>
 #define FRAMEBUFFER_MEMORY_OFFSET ((uint8_t*) 0xB8000)
 #define FRAMEBUFFER_COMMAND_PORT  0x3D4
 #define FRAMEBUFFER_DATA_PORT     0x3D5

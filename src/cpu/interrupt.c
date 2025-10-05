@@ -1,6 +1,7 @@
 #include "header/cpu/interrupt.h"
 #include "header/cpu/portio.h"
 #include "header/text/framebuffer.h"
+#include "header/text/keyboard.h"
 
 
 void io_wait(void) {
@@ -37,21 +38,19 @@ void pic_remap(void) {
     out(PIC2_DATA, PIC_DISABLE_ALL_MASK);
 }
 void main_interrupt_handler(struct InterruptFrame frame) {
-    // Cek nomor interrupt yang masuk
     switch (frame.int_number) {
-        // --- Nanti kita tambahin di sini ---
-        // case IRQ_KEYBOARD + PIC1_OFFSET:
-        //     keyboard_handler();
-        //     break;
+        // i am so sleepy finally implemented : )
+        case PIC1_OFFSET + IRQ_KEYBOARD: // 0x20 + 1 = 0x21 (Interrupt 33)
+            keyboard_isr();
+            pic_ack(IRQ_KEYBOARD); // Lapor ke PIC "udah beres"
+            break;
         
-        // case 0xE: // Page Fault
-        //     page_fault_handler();
-        //     break;
-
-        // Untuk semua interrupt lain yang belum di tangani
         default:
-            // Tulis pesan ke layar biar kita tau ada interrupt tak dikenal
-            framebuffer_write(0, 0, 'X', WHITE, BLACK); 
+            // Biarin default ini buat nangkep interrupt lain
             break;
     }
+}
+void activate_keyboard_interrupt(void) {
+    // mask n unmask
+    out(PIC1_DATA, in(PIC1_DATA) & ~(1 << IRQ_KEYBOARD));
 }
