@@ -1,8 +1,7 @@
 #ifndef _IDT_H
 #define _IDT_H
-
+#include "header/stdlib/boolean.h"
 #include <stdint.h>
-#include <stdbool.h>
 #include <stddef.h>
 
 // Konstanta

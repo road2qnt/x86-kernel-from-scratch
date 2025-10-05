@@ -2,9 +2,8 @@
 #define _INTERRUPT_H
 
 #include <stdint.h>
-#include <stdbool.h>
 #include <stddef.h>
-
+#include "header/stdlib/boolean.h"
 /* -- PIC constants -- */
 
 // PIC interrupt offset
