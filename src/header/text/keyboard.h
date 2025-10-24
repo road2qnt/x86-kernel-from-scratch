@@ -10,6 +10,7 @@
 #define EXT_SCANCODE_DOWN      0x50
 #define EXT_SCANCODE_LEFT      0x4B
 #define EXT_SCANCODE_RIGHT     0x4D
+#define EXT_SCANCODE_DELETE    0x53
 
 #define KEYBOARD_DATA_PORT     0x60
 #define EXTENDED_SCANCODE_BYTE 0xE0
@@ -37,7 +38,12 @@ struct KeyboardDriverState {
 
 
 
-
+#define KEY_BACKSPACE   '\b' 
+#define KEY_DELETE      0x7F 
+#define KEY_ARROW_UP    0x80
+#define KEY_ARROW_DOWN  0x81
+#define KEY_ARROW_LEFT  0x82
+#define KEY_ARROW_RIGHT 0x83
 
 /* -- Driver Interfaces -- */
 

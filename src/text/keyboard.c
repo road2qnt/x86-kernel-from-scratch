@@ -62,13 +62,21 @@ void keyboard_isr(void) {
     if (keyboard_state.read_extended_mode) {
         keyboard_state.read_extended_mode = false; // Matikan lagi mode-nya
         switch (scancode) {
-            case EXT_SCANCODE_UP:
-              // lagi males handling ini mwehehehe
-                // keyboard_state.keyboard_buffer = <KODE_ARROW_UP>;
-                break;
-            case EXT_SCANCODE_DOWN:
-                break;
-            // ... dst
+                case EXT_SCANCODE_UP:
+                    keyboard_state.keyboard_buffer = KEY_ARROW_UP;
+                    break;
+                case EXT_SCANCODE_DOWN:
+                    keyboard_state.keyboard_buffer = KEY_ARROW_DOWN;
+                    break;
+                case EXT_SCANCODE_LEFT:
+                    keyboard_state.keyboard_buffer = KEY_ARROW_LEFT;
+                    break;
+                case EXT_SCANCODE_RIGHT:
+                    keyboard_state.keyboard_buffer = KEY_ARROW_RIGHT;
+                    break;
+                case EXT_SCANCODE_DELETE: 
+                    keyboard_state.keyboard_buffer = KEY_DELETE;
+                    break;
         }
         return;
     }
