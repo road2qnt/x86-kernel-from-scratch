@@ -1,7 +1,7 @@
 #include "header/cpu/interrupt.h"
 #include "header/cpu/portio.h"
-#include "header/text/framebuffer.h"
-#include "header/text/keyboard.h"
+#include "header/driver/framebuffer.h"
+#include "header/driver/keyboard.h"
 
 
 void io_wait(void) {

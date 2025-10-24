@@ -20,5 +20,7 @@ void out(uint16_t port, uint8_t data);
  *  @return Recieved data from the corresponding I/O port
  */
 uint8_t in(uint16_t port);
+uint16_t in16(uint16_t port);
+void out16(uint16_t port, uint16_t data);
 
 #endif

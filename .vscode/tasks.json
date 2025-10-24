@@ -19,26 +19,9 @@
         {
             "type": "shell",
             "label": "Launch QEMU",
-            "command": "echo Starting QEMU&qemu-system-i386 -s -S -cdrom OS2025.iso",
-            "isBackground": true,
-            "dependsOn": "Build OS",
+            "command": "qemu-system-i386 -s -S -drive file=storage.bin,format=raw,if=ide,index=0,media=disk -cdrom OS2025.iso",
             "options": {
                 "cwd": "${workspaceFolder}/bin"
-            },
-            "problemMatcher": {
-                "pattern": [
-                    {
-                        "regexp": ".",
-                        "file": 1,
-                        "location": 2,
-                        "message": 3
-                    }
-                ],
-                "background": {
-                    "activeOnStart": true,
-                    "beginsPattern": ".",
-                    "endsPattern": ".",
-                }
             }
         },
         {

@@ -19,7 +19,7 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "Launch QEMU",
+            "preLaunchTask": "Build OS",
             "postDebugTask": "Exit QEMU",
             "targetArchitecture": "x86",
             "customLaunchSetupCommands": [
@@ -28,7 +28,7 @@
                     "description": "Connect to QEMU remote debugger"
                 },
                 {
-                    "text": "symbol-file kernel",
+                    "text": "symbol-file ${workspaceRoot}/bin/kernel",
                     "description": "Get kernel symbols"
                 },
                 {
@@ -37,6 +37,13 @@
                 }
             ],
             "avoidWindowsConsoleRedirection": true
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Debug QEMU",
+            "configurations": ["Kernel", "Launch QEMU"],
+            "preLaunchTask": "Build OS"
         }
     ]
 }
