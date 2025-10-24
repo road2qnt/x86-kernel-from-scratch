@@ -1,4 +1,4 @@
-#include "header/text/keyboard.h"
+#include "header/driver/keyboard.h"
 #include "header/cpu/portio.h"
 #include "header/stdlib/string.h"
 #include "header/cpu/interrupt.h"

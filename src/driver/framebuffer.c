@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include "header/text/framebuffer.h"
+#include "header/driver/framebuffer.h"
 #include "header/stdlib/string.h"
 #include "header/cpu/portio.h"
 
