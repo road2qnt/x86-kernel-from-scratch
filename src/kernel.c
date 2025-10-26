@@ -7,6 +7,7 @@
 #include "header/driver/framebuffer.h"
 #include "header/driver/keyboard.h"
 
+
 void kernel_setup(void) {
     // 1. Inisialisasi semua sistem dasar
     load_gdt(&_gdt_gdtr);
