@@ -6,6 +6,7 @@
 #include "header/stdlib/boolean.h"
 #include "header/driver/framebuffer.h"
 #include "header/driver/keyboard.h"
+#include "header/filesystem/ext2.h"
 
 
 void kernel_setup(void) {

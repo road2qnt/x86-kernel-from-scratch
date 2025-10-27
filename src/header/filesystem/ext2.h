@@ -1,7 +1,7 @@
 #ifndef _EXT2_H
 #define _EXT2_H
 
-#include "disk.h"
+#include "header/driver/disk.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
