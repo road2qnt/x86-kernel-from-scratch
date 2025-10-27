@@ -44,8 +44,8 @@ void create_ext2(void) {
     _ext2_superblock_state.s_blocks_count      = TOTAL_BLOCKS; //
     _ext2_superblock_state.s_free_blocks_count = TOTAL_BLOCKS - INITIAL_USED_BLOCKS; //
     _ext2_superblock_state.s_free_inodes_count = TOTAL_INODES - INITIAL_USED_INODES; //
-    _ext2_superblock_state.s_first_data_block  = (BLOCK_SIZE == 1024) ? 1 : 0; // SB di blok 1
-    _ext2_superblock_state.s_log_block_size    = (BLOCK_SIZE == 1024) ? 0 : ((BLOCK_SIZE == 2048) ? 1 : 2); // 0=1K, 1=2K, 2=4K
+    _ext2_superblock_state.s_first_data_block  = BGDT_LBA + 1;   _ext2_superblock_state.s_first_data_block  = (BLOCK_SIZE == 1024) ? 1 : 0; // SB di blok 1
+    _ext2_superblock_state.s_log_block_size    = (BLOCK_SIZE <= 1024) ? 0 : ((BLOCK_SIZE == 2048) ? 1 : 2); // 0=1K, 1=2K, 2=4K
     _ext2_superblock_state.s_inodes_per_group  = INODES_PER_GROUP; //
     _ext2_superblock_state.s_blocks_per_group  = BLOCKS_PER_GROUP; //
     _ext2_superblock_state.s_magic             = EXT2_SUPER_MAGIC; // 0xEF53
@@ -132,4 +132,36 @@ void create_ext2(void) {
     write_blocks(&buffer[0], ROOT_DIR_BLOCK_LBA, 1); //
 
     g_filesystem_initialized = true; // Tandai FS sudah siap
+}
+
+/**
+ * @brief Initialize file system driver state, if is_empty_storage() then create_ext2()
+ * Else, read and cache super block (located at block 1) and bgd table (located at block 2) into state
+ */
+void initialize_filesystem_ext2(void) {
+    // 1. Cek dulu disk-nya kosong apa enggak pakai is_empty_storage()
+    if (is_empty_storage()) {
+        // 2a. Kalau kosong, panggil create_ext2() buat bikin filesystem baru
+        create_ext2();
+        // Setelah create_ext2(), state Superblock & BGDT udah ada di variabel global
+        // Tandai filesystem udah siap
+        g_filesystem_initialized = true;
+    } else {
+        // 2b. Kalau udah ada isinya, baca struktur data yang udah ada dari disk
+        // Baca Superblock (dari LBA 1) ke variabel global _ext2_superblock_state
+        read_blocks(&_ext2_superblock_state, SUPERBLOCK_LBA, 1);
+        // Baca Block Group Descriptor Table (dari LBA 2) ke variabel global _ext2_bgdt_state
+        // Asumsi cuma 1 block group, jadi baca BGD pertama aja
+        read_blocks(&_ext2_bgdt_state.table[0], BGDT_LBA, 1);
+
+        // Opsional tapi bagus: Pastikan magic number-nya bener (0xEF53)
+        if (_ext2_superblock_state.s_magic == EXT2_SUPER_MAGIC) {
+            // Kalau magic number cocok, tandai filesystem udah siap
+            g_filesystem_initialized = true;
+        } else {
+            // Kalau nggak cocok, berarti ada error, filesystem nggak valid
+            g_filesystem_initialized = false;
+            // Lo bisa tambahin pesan error ke framebuffer di sini kalau mau
+        }
+    }
 }

@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define BLOCK_SIZE 512
 #define SUPERBLOCK_LBA          1 // Atau 2 jika boot sector kepake 2 blok? Biasanya 1.
 #define BGDT_LBA                (SUPERBLOCK_LBA + 1) // Biasanya 2
 // Lokasi LBA di Group 0 (karena create_ext2 fokus ke group 0 dulu)

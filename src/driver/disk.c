@@ -43,5 +43,7 @@ void write_blocks(const void *ptr, uint32_t logical_block_address, uint8_t block
         for (uint32_t j = 0; j < HALF_BLOCK_SIZE; j++)
             out16(0x1F0, ((uint16_t*) ptr)[HALF_BLOCK_SIZE*i + j]);
     }
+    out(0x1F7, 0xE7); // ATA_CMD_FLUSH_CACHE
+    ATA_busy_wait(); 
 }
 
