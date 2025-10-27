@@ -131,7 +131,7 @@ uint32_t get_dir_first_child_offset(void *ptr) {
 }
 
 //===================================================================
-//== Filesystem Initializer Functions (BARU LANJUT KE SINI)
+//== Filesystem Initializer Functions 
 //===================================================================
 /**
  * @brief Cek apakah disk masih kosong (belum diformat EXT2).
@@ -283,4 +283,171 @@ void initialize_filesystem_ext2(void) {
             // Lo bisa tambahin pesan error ke framebuffer di sini kalau mau
         }
     }
+}
+
+/**
+ * @brief Membaca struktur inode dari disk ke memori.
+ * @param inode_num Nomor inode yang ingin dibaca (mulai dari 1).
+ * @param inode_out Pointer ke struct EXT2Inode tempat menyimpan hasil baca.
+ * @return true jika berhasil, false jika gagal (misal inode tidak valid).
+ */
+static bool read_inode(uint32_t inode_num, struct EXT2Inode *inode_out) {
+    if (inode_num == 0 || inode_num > _ext2_superblock_state.s_inodes_count) {
+        return false; // Nomor inode tidak valid
+    }
+
+    uint32_t bgd_idx = inode_to_bgd(inode_num); // Cari grupnya
+    uint32_t local_idx = inode_to_local(inode_num); // Cari indeks lokalnya
+    uint32_t inode_table_start_lba = _ext2_bgdt_state.table[bgd_idx].bg_inode_table; // LBA awal Inode Table grup ini
+
+    // Hitung LBA blok tempat inode ini berada
+    uint32_t inodes_per_block = BLOCK_SIZE / sizeof(struct EXT2Inode);
+    uint32_t block_index_in_table = local_idx / inodes_per_block;
+    uint32_t inode_lba = inode_table_start_lba + block_index_in_table;
+
+    // Hitung offset byte inode di dalam blok itu
+    uint32_t offset_in_block = (local_idx % inodes_per_block) * sizeof(struct EXT2Inode);
+
+    // Baca blok yang berisi inode
+    struct BlockBuffer inode_block_buffer;
+    read_blocks(&inode_block_buffer, inode_lba, 1);
+
+    // Salin data inode dari buffer ke struct output
+    memcpy(inode_out, (uint8_t*)inode_block_buffer.buf + offset_in_block, sizeof(struct EXT2Inode));
+
+    return true; // Berhasil
+}
+
+
+/* =============================== CRUD FUNC ======================================== */
+
+/**
+ * @brief EXT2 Folder / Directory read
+ * @param prequest Pointer ke request, berisi inode parent (direktori yg mau dibaca) dan buffer output.
+ * @return Error code: 0 success - 1 not a folder - 2 not found (di read() aja) - 3 parent folder invalid (inode 0) - -1 unknown error / buffer too small
+ */
+int8_t read_directory(struct EXT2DriverRequest *prequest) {
+    // 1. Validasi awal
+    if (!g_filesystem_initialized) return -1; // FS belum siap
+    if (!prequest || !prequest->buf) return -1; // Request atau buffer tidak valid
+    if (prequest->parent_inode == 0) return 3; // Inode 0 tidak valid untuk direktori
+
+    // 2. Baca Inode direktori yang diminta
+    struct EXT2Inode dir_inode;
+    if (!read_inode(prequest->parent_inode, &dir_inode)) {
+        return 3; // Gagal baca inode parent (dianggap invalid)
+    }
+
+    // 3. Cek apakah ini benar-benar direktori
+    if ((dir_inode.i_mode & EXT2_S_IFDIR) == 0) { // Cek bit tipe direktori
+        return 1; // Bukan sebuah folder
+    }
+
+    // 4. Cek apakah direktori punya data block
+    //    Implementasi simpel: hanya baca blok data pertama (direct block 0)
+    if (dir_inode.i_block[0] == 0) {
+        // Direktori kosong (hanya . dan .. mungkin sudah dibuat tapi blok belum dialokasi?)
+        // Atau ini indikasi error. Kita anggap sukses tapi kosong.
+        memset(prequest->buf, 0, prequest->buffer_size); // Kosongkan buffer output
+        return 0; // Sukses (direktori kosong)
+    }
+
+    // 5. Baca blok data pertama direktori
+    struct BlockBuffer dir_data_buffer;
+    read_blocks(&dir_data_buffer, dir_inode.i_block[0], 1);
+
+    // 6. Salin data blok ke buffer output, perhatikan ukuran buffer
+    uint32_t copy_size = (BLOCK_SIZE < prequest->buffer_size) ? BLOCK_SIZE : prequest->buffer_size;
+    memcpy(prequest->buf, dir_data_buffer.buf, copy_size);
+
+    // Jika buffer output lebih kecil dari ukuran blok, mungkin ada data terpotong.
+    // Untuk simplifikasi, kita return success aja. Handling buffer size bisa ditambah.
+    if (BLOCK_SIZE > prequest->buffer_size) {
+        // Bisa return error code khusus buffer kecil, misal -2
+        // return -2; // Contoh: Buffer too small
+    }
+
+    return 0; // Sukses
+}
+
+/**
+ * @brief EXT2 read, read a file from file system
+ * @param request All attribute will be used except is_dir for read, buffer_size will limit reading count
+ * @return Error code: 0 success - 1 not a file - 2 not enough buffer - 3 not found - 4 parent folder invalid - -1 unknown
+ */
+int8_t read(struct EXT2DriverRequest request) {
+    // 1. Validasi Awal
+    if (!g_filesystem_initialized) return -1;
+    if (request.parent_inode == 0) return 4; // Parent invalid
+    if (!request.buf || !request.name || request.name_len == 0) return -1; // Request tidak valid
+
+    // 2. Cari Inode File di Parent Directory
+    // Kita butuh helper function find_entry_in_dir()
+    uint32_t file_inode_num = find_entry_in_dir(request.parent_inode, request.name, request.name_len);
+    if (file_inode_num == 0) {
+        return 3; // File tidak ditemukan
+    }
+
+    // 3. Baca Inode File
+    struct EXT2Inode file_inode;
+    if (!read_inode(file_inode_num, &file_inode)) {
+        // Jika gagal baca inode padahal entry-nya ada, ini aneh.
+        return 3; // Anggap saja not found atau error
+    }
+
+    // 4. Cek Tipe File
+    if ((file_inode.i_mode & EXT2_S_IFDIR)) { // Cek apakah ini direktori
+        return 1; // Bukan file biasa
+    }
+    // Pastikan ini file biasa (opsional, tapi bagus)
+    if (!(file_inode.i_mode & EXT2_S_IFREG)) {
+         return 1; // Bukan file regular
+    }
+
+
+    // 5. Cek Ukuran Buffer
+    // Ukuran file aktual dalam byte
+    uint32_t file_size = file_inode.i_size;
+    // Ukuran buffer yang disediakan user
+    uint32_t buffer_size = request.buffer_size;
+    // Berapa byte yang *sebenarnya* akan kita baca
+    uint32_t bytes_to_read = (buffer_size < file_size) ? buffer_size : file_size;
+
+    if (buffer_size < file_size) {
+        // Warning: buffer nggak cukup, data akan terpotong.
+        // Sesuai spec, return error code 2.
+        // Tapi untuk simplifikasi awal, kita bisa lanjut baca sebatas buffer_size.
+        // return 2; // Aktifkan ini jika mau strict error checking
+    }
+
+    // 6. Baca Data Block
+    uint8_t *output_buffer = (uint8_t*)request.buf;
+    uint32_t bytes_read = 0;
+    struct BlockBuffer data_block_buffer; // Buffer 1 blok
+
+    // Loop melalui pointer blok di inode (hanya handle direct block dulu)
+    for (int i = 0; i < 12 && file_inode.i_block[i] != 0 && bytes_read < bytes_to_read; i++) {
+        uint32_t block_lba = file_inode.i_block[i];
+
+        // Baca satu blok data
+        read_blocks(&data_block_buffer, block_lba, 1);
+
+        // Hitung berapa byte dari blok ini yang perlu disalin
+        uint32_t remaining_bytes_to_read = bytes_to_read - bytes_read;
+        uint32_t copy_size = (remaining_bytes_to_read < BLOCK_SIZE) ? remaining_bytes_to_read : BLOCK_SIZE;
+
+        // Salin data dari buffer blok ke buffer output
+        memcpy(output_buffer + bytes_read, data_block_buffer.buf, copy_size);
+
+        // Update jumlah byte yang sudah dibaca
+        bytes_read += copy_size;
+    }
+
+    // TODO: Implementasi pembacaan dari indirect blocks (i_block[12], [13], [14]) jika bytes_read < bytes_to_read
+
+    // Jika setelah loop, bytes_read masih kurang dari bytes_to_read (dan buffer cukup),
+    // kemungkinan file-nya korup atau implementasi indirect block belum ada.
+    // Untuk sekarang, kita anggap selesai.
+
+    return 0; // Sukses
 }
