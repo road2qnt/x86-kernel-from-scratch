@@ -6,7 +6,18 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#define BLOCK_SIZE 512
+#define SUPERBLOCK_LBA          1 // Atau 2 jika boot sector kepake 2 blok? Biasanya 1.
+#define BGDT_LBA                (SUPERBLOCK_LBA + 1) // Biasanya 2
+// Lokasi LBA di Group 0 (karena create_ext2 fokus ke group 0 dulu)
+#define BLOCK_BITMAP_LBA        (BGDT_LBA + 1) // Biasanya 3
+#define INODE_BITMAP_LBA        (BLOCK_BITMAP_LBA + 1) // Biasanya 4
+#define INODE_TABLE_LBA         (INODE_BITMAP_LBA + 1) // Biasanya 5
+// Lokasi Data Block Root (harus dihitung setelah tahu lokasi Inode Table)
+#define ROOT_DIR_BLOCK_LBA      (INODE_TABLE_LBA + INODES_TABLE_BLOCK_COUNT) // Misal: 5 + 16 = 21
 
+#define ROOT_INODE_NO           2 // Inode nomor 2 standar untuk root
+#define EXT2_GOOD_OLD_FIRST_INO 11 // Inode 1-10 biasanya di-reserve
 
 /* -- IF2130 File System constants -- */
 #define BOOT_SECTOR 0 // legacy from FAT32 filesystem IF2130 OS
@@ -19,7 +30,14 @@
 #define INODES_TABLE_BLOCK_COUNT 16u 
 #define INODES_PER_GROUP (INODES_PER_TABLE * INODES_TABLE_BLOCK_COUNT) // number of inodes per group
 
-
+#define TOTAL_BLOCKS (BLOCKS_PER_GROUP * GROUPS_COUNT) 
+#define TOTAL_INODES (INODES_PER_GROUP * GROUPS_COUNT) 
+// Hitungan untuk Group 0
+#define INITIAL_USED_BLOCKS_IN_GROUP0 (1 + 1 + 1 + 1 + INODES_TABLE_BLOCK_COUNT + 1) // SB(di LBA1), BGDT(di LBA2), BBmap, IBmap, ITbl, RootData
+#define INITIAL_USED_INODES_IN_GROUP0 EXT2_GOOD_OLD_FIRST_INO // Inode 1-11 kepake (termasuk root #2)
+// Total (jika cuma 1 group)
+#define INITIAL_USED_BLOCKS INITIAL_USED_BLOCKS_IN_GROUP0
+#define INITIAL_USED_INODES INITIAL_USED_INODES_IN_GROUP0
 
 /**
  * inodes constant 
@@ -62,37 +80,40 @@ struct EXT2DriverRequest
  */
 struct EXT2Superblock
 {
-    uint32_t s_inodes_count;        // 32bit value indicating the total number of inodes, both used and free, in the file system 
-    uint32_t s_blocks_count;        // 32bit value indicating the total number of blocks in the system including all used, free and reserved 
-
-    uint32_t s_r_blocks_count;      // 32bit value indicating the total number of blocks reserved for the usage of the super user. {maybe not used because there is no superuser in our system} 
-    uint32_t s_free_blocks_count;   // 32bit value indicating the total number of free blocks, including the number of reserved blocks 
-    uint32_t s_free_inodes_count;   // 32bit value indicating the total number of free inodes. This is a sum of all free inodes of all the block groups.
-    uint32_t s_first_data_block;    // 32bit value identifying the first data block, in other word the id of the block containing the superblock structure.
-    uint32_t s_first_ino;           // 32bit value indicating the first inode that can be used. Set this to 1, indicating root inode (maybe)
-
-    uint32_t s_blocks_per_group;    
-    /** 32bit value indicating the total number of blocks per group. 
-     *  This value in combination with s_first_data_block can be used to determine the block groups boundaries. 
-     *  Due to volume size boundaries, the last block group might have a smaller number of blocks than what is specified in this field. */
-
-    uint32_t s_frags_per_group; 
-    /**
-     * 32bit value indicating the total number of fragments per group. It is also used to determine the size of the block bitmap of each block group.
-     */
-
-    uint32_t s_inodes_per_group; 
-    /**
-     * 32bit value indicating the total number of inodes per group. This is also used to determine the size of the inode bitmap of each block group. 
-     * Note that you cannot have more than (block size in bytes * 8) inodes per group as the inode bitmap must fit within a single block. 
-     * This value must be a perfect multiple of the number of inodes that can fit in a block ((1024<<s_log_block_size)/s_inode_size).
-     */
-
-    uint16_t s_magic; // 16bit value indicating the file system type. For ext2, this value is 0xEF53.(DEFINE as EXT2_SUPER_MAGIC)
-
-    uint8_t s_prealloc_blocks; // 8bit value indicating the number of blocks to preallocate for files.
-    uint8_t s_prealloc_dir_blocks; // 8bit value indicating the number of blocks to preallocate for directories.
-
+    uint32_t s_inodes_count;
+    uint32_t s_blocks_count;
+    uint32_t s_r_blocks_count;
+    uint32_t s_free_blocks_count;
+    uint32_t s_free_inodes_count;
+    uint32_t s_first_data_block;
+    // --- TAMBAHKAN INI ---
+    uint32_t s_log_block_size;    // Log2 of block size (0=1KB, 1=2KB, 2=4KB)
+    uint32_t s_log_frag_size;     // Log2 of fragment size (biasanya sama)
+    // ---------------------
+    uint32_t s_blocks_per_group;
+    uint32_t s_frags_per_group;
+    uint32_t s_inodes_per_group;
+    uint32_t s_mtime;             // Mount time
+    uint32_t s_wtime;             // Write time
+    uint16_t s_mnt_count;         // Mount count
+    uint16_t s_max_mnt_count;     // Max mount count
+    uint16_t s_magic;             // Magic signature (0xEF53)
+    uint16_t s_state;             // Filesystem state
+    uint16_t s_errors;            // Behaviour when detecting errors
+    uint16_t s_minor_rev_level;   // Minor revision level
+    uint32_t s_lastcheck;         // Time of last check
+    uint32_t s_checkinterval;     // Max time between checks
+    uint32_t s_creator_os;        // OS
+    uint32_t s_rev_level;         // Revision level
+    uint16_t s_def_resuid;        // Default uid for reserved blocks
+    uint16_t s_def_resgid;        // Default gid for reserved blocks
+    // --- EXT2_DYNAMIC_REV Specific (penting kalau rev_level >= 1) ---
+    uint32_t s_first_ino;         // First non-reserved inode (biasanya 11)
+    uint16_t s_inode_size;        // Size of inode structure (biasanya 128)
+    uint16_t s_block_group_nr;    // Block group # of this superblock
+    // ... (feature flags, uuid, volume name, dll. bisa ditambah kalau perlu) ...
+    // Pastikan total ukuran struct ini pas (biasanya 1024 byte), tambah padding jika perlu.
+    uint8_t padding[1024 - 104]; // Sesuaikan ukuran padding ini! Hitung ukuran field di atas dulu.
 
 }__attribute__((packed));
 
@@ -159,25 +180,24 @@ struct EXT2BlockGroupDescriptorTable
 
 struct EXT2Inode
 {
-    uint16_t i_mode; // 16bit value indicating the file type and the access rights.
-    uint32_t i_size; // 32bit value indicating the size of the file in bytes.
-    uint32_t i_blocks; // 32bit value indicating the number of blocks used by the file.
-
-    /**
-     * 15 x 32bit block numbers pointing to the blocks containing the data for this inode
-     * 
-     * - The first 12 blocks are direct blocks
-     * - The 13th entry in this array is the block number of the first indirect block which is a block containing an array of block ID containing the data
-     * Therefore, the 13th block of the file will be the first block ID contained in the indirect block. With a 1KiB block size, blocks 13 to 268 of the file data are contained in this indirect block.
-     * - The 14th entry in this array is the block number of the first doubly-indirect block
-     * - The 15th entry in this array is the block number of the triply-indirect block
-     * 
-     * maybe this video will help
-     * - https://www.youtube.com/watch?v=tMVj22EWg6A
-     *  
-     */
-    uint32_t i_block[15];
-
+    uint16_t i_mode;        // File mode
+    uint16_t i_uid;         // User id
+    uint32_t i_size;        // Size in bytes
+    uint32_t i_atime;       // Access time
+    uint32_t i_ctime;       // Creation time
+    uint32_t i_mtime;       // Modification time
+    uint32_t i_dtime;       // Deletion time
+    uint16_t i_gid;         // Group id
+    uint16_t i_links_count; // Gabungan
+    uint32_t i_blocks;      // Blocks count (in 512b units)
+    uint32_t i_flags;       // File flags
+    uint32_t i_osd1;        // OS dependent 1
+    uint32_t i_block[15];   // Block map
+    uint32_t i_generation;  // File version (for NFS)
+    uint32_t i_file_acl;    // File ACL
+    uint32_t i_dir_acl;     // Directory ACL / high 32 bits of file size
+    uint32_t i_faddr;       // Fragment address
+    uint8_t  i_osd2[12];    // OS dependent 2
 }__attribute__((packed));
 
 struct EXT2InodeTable
