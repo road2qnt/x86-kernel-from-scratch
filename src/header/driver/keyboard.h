@@ -4,8 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "header/cpu/interrupt.h"
-#include "header/stdlib/boolean.h"
-
+#include <stdbool.h>
 #define EXT_SCANCODE_UP        0x48
 #define EXT_SCANCODE_DOWN      0x50
 #define EXT_SCANCODE_LEFT      0x4B

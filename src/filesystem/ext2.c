@@ -14,6 +14,125 @@ const uint8_t fs_signature[BLOCK_SIZE] = {
     [BLOCK_SIZE-1] = 'k',
 };
 
+
+//===================================================================
+//== Helper Functions (Implementasi)
+//===================================================================
+
+/**
+ * @brief Dapatkan pointer ke nama file di dalam directory entry.
+ * Nama file disimpan tepat setelah struct EXT2DirectoryEntry.
+ * @param entry Pointer ke awal directory entry.
+ * @return Pointer ke karakter pertama nama file.
+ */
+char *get_entry_name(void *entry) {
+    // Casting entry ke tipe structnya
+    struct EXT2DirectoryEntry *dir_entry = (struct EXT2DirectoryEntry *)entry;
+    // Nama dimulai tepat setelah struct itu selesai
+    return (char *)((uint8_t *)dir_entry + sizeof(struct EXT2DirectoryEntry));
+}
+
+/**
+ * @brief Dapatkan pointer ke directory entry di offset tertentu dalam buffer blok.
+ * @param ptr Pointer ke awal buffer data blok direktori.
+ * @param offset Byte offset dari awal buffer ke awal directory entry yang dicari.
+ * @return Pointer ke struct EXT2DirectoryEntry di offset itu.
+ */
+struct EXT2DirectoryEntry *get_directory_entry(void *ptr, uint32_t offset) {
+    // Cukup geser pointer ptr sebanyak offset byte
+    return (struct EXT2DirectoryEntry *)((uint8_t *)ptr + offset);
+}
+
+/**
+ * @brief Dapatkan pointer ke directory entry berikutnya.
+ * @param entry Pointer ke directory entry saat ini.
+ * @return Pointer ke directory entry berikutnya, atau NULL jika rec_len 0.
+ */
+struct EXT2DirectoryEntry *get_next_directory_entry(struct EXT2DirectoryEntry *entry) {
+    // Jika panjang record 0, ini indikasi akhir atau error
+    if (entry->rec_len == 0) {
+        return NULL;
+    }
+    // Entri berikutnya dimulai setelah entry saat ini + panjang recordnya
+    return (struct EXT2DirectoryEntry *)((uint8_t *)entry + entry->rec_len);
+}
+
+/**
+ * @brief Hitung panjang record (rec_len) yang dibutuhkan untuk sebuah entry.
+ * Panjang harus cukup untuk struct + nama + padding agar kelipatan 4.
+ * @param name_len Panjang nama file.
+ * @return Ukuran rec_len yang sudah di-align kelipatan 4.
+ */
+uint16_t get_entry_record_len(uint8_t name_len) {
+    // Ukuran dasar = ukuran struct + panjang nama
+    uint16_t base_len = sizeof(struct EXT2DirectoryEntry) + name_len;
+    // Bulatkan ke atas ke kelipatan 4 terdekat
+    // Trik: (base_len + 3) / 4 * 4 atau pakai bitwise (base_len + 3) & ~3
+    return (base_len + 3) & ~3;
+}
+
+/**
+ * @brief get bgd index from inode, inode will starts at index 1
+ * @param inode 1 to INODES_PER_GROUP * GROUPS_COUNT
+ * @return bgd index (0 to GROUP_COUNT - 1)
+ */
+uint32_t inode_to_bgd(uint32_t inode) {
+    // Inode 0 tidak valid, inode 1-N ada di grup 0, N+1 - 2N di grup 1, dst.
+    // Inode dimulai dari 1, jadi kurangi 1 untuk perhitungan berbasis 0.
+    if (inode == 0) return 0; // Seharusnya tidak terjadi, tapi untuk jaga-jaga
+    return (inode - 1) / INODES_PER_GROUP;
+}
+
+/**
+ * @brief get inode local index in the corrresponding bgd
+ * @param inode 1 to INODES_PER_GROUP * GROUP_COUNT
+ * @return local index (0 to INODES_PER_GROUP - 1)
+ */
+uint32_t inode_to_local(uint32_t inode) {
+    // Sama, kurangi 1 dulu. Hasil modulo adalah indeks lokalnya.
+    if (inode == 0) return 0;
+    return (inode - 1) % INODES_PER_GROUP;
+}
+
+/**
+ * @brief get the offset of the first child of the directory
+ * (Offset setelah entri '.' dan '..')
+ * @param ptr Pointer ke buffer yang berisi data block direktori
+ * @return Byte offset dari awal buffer ke awal entri anak pertama,
+ * atau 0 jika ada error atau direktori kosong.
+ */
+uint32_t get_dir_first_child_offset(void *ptr) {
+    if (!ptr) return 0;
+
+    // Ambil entri pertama (".")
+    struct EXT2DirectoryEntry *dot_entry = get_directory_entry(ptr, 0);
+    // Jika tidak valid atau nama bukan ".", return error (0)
+    if (!dot_entry || dot_entry->rec_len == 0 || dot_entry->name_len != 1 || get_entry_name(dot_entry)[0] != '.') {
+        return 0;
+    }
+
+    // Ambil entri kedua ("..")
+    struct EXT2DirectoryEntry *dot_dot_entry = get_next_directory_entry(dot_entry);
+    // Jika tidak valid atau nama bukan "..", return error (0)
+    if (!dot_dot_entry || dot_dot_entry->rec_len == 0 || dot_dot_entry->name_len != 2 || get_entry_name(dot_dot_entry)[0] != '.' || get_entry_name(dot_dot_entry)[1] != '.') {
+        return 0;
+    }
+
+    // Offset anak pertama adalah offset "." + panjang record "." + panjang record ".."
+    // Atau lebih simpel: alamat memori setelah ".." dikurangi alamat awal buffer.
+    uint32_t offset = (uint32_t)((uint8_t *)dot_dot_entry + dot_dot_entry->rec_len - (uint8_t *)ptr);
+
+    // Jika offset melebihi ukuran blok, ada yang salah
+    if (offset >= BLOCK_SIZE) {
+        return 0; // Atau return BLOCK_SIZE sebagai tanda akhir? Tergantung desain. 0 lebih aman.
+    }
+
+    return offset;
+}
+
+//===================================================================
+//== Filesystem Initializer Functions (BARU LANJUT KE SINI)
+//===================================================================
 /**
  * @brief Cek apakah disk masih kosong (belum diformat EXT2).
  * @return true jika kosong, false jika sudah ada signature.
