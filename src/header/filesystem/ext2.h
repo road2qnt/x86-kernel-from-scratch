@@ -225,7 +225,7 @@ struct EXT2DirectoryEntry
     /**
      * 8bit value indicating the length of the file name.
      */
-    uint16_t name_len;
+    uint8_t name_len;
 
     /**
      * 8bit unsigned value used to indicate file type.
