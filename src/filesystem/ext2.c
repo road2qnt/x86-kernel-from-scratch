@@ -19,6 +19,8 @@ const uint8_t fs_signature[BLOCK_SIZE] = {
 //== Helper Functions (Implementasi)
 //===================================================================
 
+static bool read_inode(uint32_t inode_num, struct EXT2Inode *inode_out);
+
 /**
  * @brief Dapatkan pointer ke nama file di dalam directory entry.
  * Nama file disimpan tepat setelah struct EXT2DirectoryEntry.
@@ -129,9 +131,7 @@ uint32_t get_dir_first_child_offset(void *ptr) {
 
     return offset;
 }
-static inline void clear_bit(uint8_t *bitmap, uint32_t idx) {
-    bitmap[idx >> 3] &= (uint8_t)~(1u << (idx & 7u));
-}
+
 
 static uint32_t find_entry_in_dir(uint32_t dir_inode_num, const char *name, uint32_t name_len) {
     if (dir_inode_num == 0 || name == NULL || name_len == 0) return 0;
