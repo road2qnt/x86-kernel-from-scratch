@@ -66,5 +66,5 @@ struct GDTR {
     uint16_t                     size;
     struct GlobalDescriptorTable *address;
 } __attribute__((packed));
-
+void load_gdt(struct GDTR *gdtr);
 #endif
