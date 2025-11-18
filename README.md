@@ -1,6 +1,6 @@
 # Rendang OS - IF2130 Sistem Operasi 2025/2026
 
-![Mascot Rendang OS](link_gambar_mascot_anime_rendang.jpg)
+![Mascot Rendang OS](https://github.com/labsister23/tugas-besar-os-rendangos/blob/main/mascot.jpg?raw=true)
 
 > *"Sistem Operasi dengan Cita Rasa Bumbu Rempah Teknologi"*
 
