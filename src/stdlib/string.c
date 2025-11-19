@@ -8,11 +8,10 @@ void* memset(void *s, int c, size_t n) {
         buf[i] = (uint8_t) c;
     return s;
 }
-void* memset16(void *ptr, uint16_t value, uint32_t num) {
-    uint16_t* p = ptr;
-    while(num--) {
+void* memset16(void *ptr, int value, size_t num) {
+    uint16_t *p = (uint16_t *)ptr;
+    while (num--)
         *p++ = value;
-    }
     return ptr;
 }
 void* memcpy(void* restrict dest, const void* restrict src, size_t n) {
