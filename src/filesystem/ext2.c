@@ -1,8 +1,26 @@
 #include "../header/filesystem/ext2.h"
 #include "../header/driver/disk.h"
-#include "../header/stdlib/string.h"
+
+// --- BLOK KONDISIONAL (Hanya untuk String/Stdlib) ---
+#if defined(FS_INSERTER)
+    // Host (Linux) Environment
+    #include <stdio.h>
+    #include <string.h>
+    #include <stdint.h>
+    #include <stdbool.h>
+#else
+    // Kernel (Bare Metal) Environment
+    #include "../header/stdlib/string.h"
+#endif
+// ----------------------------------------------------
+
+// --- BLOK WAJIB (HARUS DI LUAR IFDEF) ---
+// File ini harus dibaca oleh KEDUANYA (Kernel & Inserter)
 #include "../header/stdlib/boolean.h"
-#include "../header/stdlib/utils.h"
+#include "../header/stdlib/utils.h"  // <<< INI YANG BIKIN ERROR KEMAREN
+// ----------------------------------------
+
+// ... (Sisa kode ke bawah jangan diubah) ...
 
 // ==============================================================================
 // GLOBAL STATE & CONSTANTS
@@ -288,26 +306,51 @@ static int8_t remove_entry_from_dir(uint32_t parent_inode_num, char *name_to_rem
 // ==============================================================================
 
 bool is_empty_storage(void) {
+    #ifdef FS_INSERTER
+    printf("    [ext2.c] > Masuk is_empty_storage\n");
+    #endif
+
     struct BlockBuffer boot_sector_buffer;
+    
+    #ifdef FS_INSERTER
+    printf("    [ext2.c] > Reading boot sector...\n");
+    #endif
+    
     read_blocks(&boot_sector_buffer, BOOT_SECTOR, 1);
-    return memcmp(boot_sector_buffer.buf, fs_signature, BLOCK_SIZE) != 0;
+
+    #ifdef FS_INSERTER
+    printf("    [ext2.c] > Comparing signature...\n");
+    #endif
+    
+    return memcmp(boot_sector_buffer.buf, fs_signature, BLOCK_SIZE) != 0; 
 }
 
 void create_ext2(void) {
-    struct BlockBuffer buffer;
+    // Pake static biar gak menuhin stack (Anti Stack Overflow) & otomatis nol
+    static struct BlockBuffer buffer; 
 
-    // 1. Write Signature
+    #ifdef FS_INSERTER
+    printf("    [create_ext2] START. Buffer Addr: %p\n", &buffer); fflush(stdout);
+    #endif
+
+    // --- 1. Tulis Signature ---
     memset(buffer.buf, 0, BLOCK_SIZE);
     memcpy(buffer.buf, fs_signature, sizeof(fs_signature));
+    #ifdef FS_INSERTER
+    printf("    [create_ext2] 1. Writing Boot Sector...\n"); fflush(stdout);
+    #endif
     write_blocks(&buffer, BOOT_SECTOR, 1);
 
-    // 2. Setup & Write Superblock
+    // --- 2. Superblock ---
+    #ifdef FS_INSERTER
+    printf("    [create_ext2] 2. Config Superblock...\n"); fflush(stdout);
+    #endif
     memset(&_ext2_superblock_state, 0, sizeof(struct EXT2Superblock));
     _ext2_superblock_state.s_inodes_count      = TOTAL_INODES;
     _ext2_superblock_state.s_blocks_count      = TOTAL_BLOCKS;
     _ext2_superblock_state.s_free_blocks_count = TOTAL_BLOCKS - INITIAL_USED_BLOCKS;
     _ext2_superblock_state.s_free_inodes_count = TOTAL_INODES - INITIAL_USED_INODES;
-    _ext2_superblock_state.s_first_data_block  = BGDT_LBA + 1; 
+    _ext2_superblock_state.s_first_data_block  = BGDT_LBA + 1;
     _ext2_superblock_state.s_log_block_size    = 0; 
     _ext2_superblock_state.s_inodes_per_group  = INODES_PER_GROUP;
     _ext2_superblock_state.s_blocks_per_group  = BLOCKS_PER_GROUP;
@@ -317,36 +360,59 @@ void create_ext2(void) {
 
     memset(buffer.buf, 0, BLOCK_SIZE);
     memcpy(buffer.buf, &_ext2_superblock_state, sizeof(struct EXT2Superblock));
+    #ifdef FS_INSERTER
+    printf("    [create_ext2]    Writing Superblock...\n"); fflush(stdout);
+    #endif
     write_blocks(&buffer, SUPERBLOCK_LBA, 1);
 
-    // 3. Setup & Write BGDT
+    // --- 3. BGDT ---
+    #ifdef FS_INSERTER
+    printf("    [create_ext2] 3. Config BGDT...\n"); fflush(stdout);
+    #endif
     memset(&_ext2_bgdt_state, 0, sizeof(struct EXT2BlockGroupDescriptorTable));
     _ext2_bgdt_state.table[0].bg_block_bitmap      = BLOCK_BITMAP_LBA;
     _ext2_bgdt_state.table[0].bg_inode_bitmap      = INODE_BITMAP_LBA;
     _ext2_bgdt_state.table[0].bg_inode_table       = INODE_TABLE_LBA;
     _ext2_bgdt_state.table[0].bg_free_blocks_count = BLOCKS_PER_GROUP - INITIAL_USED_BLOCKS;
     _ext2_bgdt_state.table[0].bg_free_inodes_count = INODES_PER_GROUP - INITIAL_USED_INODES;
-    _ext2_bgdt_state.table[0].bg_used_dirs_count   = 1; 
+    _ext2_bgdt_state.table[0].bg_used_dirs_count   = 1;
 
     memset(buffer.buf, 0, BLOCK_SIZE);
     memcpy(buffer.buf, &_ext2_bgdt_state.table[0], sizeof(struct EXT2BlockGroupDescriptor));
+    #ifdef FS_INSERTER
+    printf("    [create_ext2]    Writing BGDT...\n"); fflush(stdout);
+    #endif
     write_blocks(&buffer, BGDT_LBA, 1);
 
-    // 4. Bitmaps
+    // --- 4. Bitmaps ---
+    #ifdef FS_INSERTER
+    printf("    [create_ext2] 4. Writing Bitmaps...\n"); fflush(stdout);
+    #endif
+    
+    // Block Bitmap
     memset(buffer.buf, 0, BLOCK_SIZE);
     for (uint32_t i = 0; i < INITIAL_USED_BLOCKS; ++i) set_bit(buffer.buf, i);
     write_blocks(&buffer, BLOCK_BITMAP_LBA, 1);
 
+    // Inode Bitmap
     memset(buffer.buf, 0, BLOCK_SIZE);
     for (uint32_t i = 1; i <= INITIAL_USED_INODES; ++i) set_bit(buffer.buf, i - 1);
     write_blocks(&buffer, INODE_BITMAP_LBA, 1);
 
-    // 5. Inode Table (Root)
+    // --- 5. Inode Table ---
+    #ifdef FS_INSERTER
+    printf("    [create_ext2] 5. Clearing Inode Table...\n"); fflush(stdout);
+    #endif
+    // Zero out Inode Table Blocks
     memset(buffer.buf, 0, BLOCK_SIZE);
     for (uint32_t i = 0; i < INODES_TABLE_BLOCK_COUNT; i++) {
         write_blocks(&buffer, INODE_TABLE_LBA + i, 1);
     }
-    
+
+    // Setup Root Inode
+    #ifdef FS_INSERTER
+    printf("    [create_ext2] 5b. Writing Root Inode...\n"); fflush(stdout);
+    #endif
     struct EXT2Inode root_inode;
     memset(&root_inode, 0, sizeof(struct EXT2Inode));
     root_inode.i_mode  = EXT2_S_IFDIR | 0755;
@@ -354,12 +420,18 @@ void create_ext2(void) {
     root_inode.i_links_count = 2;
     root_inode.i_blocks = BLOCK_SIZE / 512;
     root_inode.i_block[0] = ROOT_DIR_BLOCK_LBA;
+    
+    // Pake write_inode helper (pastikan helper ini aman!)
     write_inode(ROOT_INODE_NO, &root_inode);
 
-    // 6. Root Data Block
+    // --- 6. Root Data Block ---
+    #ifdef FS_INSERTER
+    printf("    [create_ext2] 6. Writing Root Dir Data...\n"); fflush(stdout);
+    #endif
     memset(buffer.buf, 0, BLOCK_SIZE);
     struct EXT2DirectoryEntry *entry = (struct EXT2DirectoryEntry *)buffer.buf;
 
+    // "."
     entry->inode = ROOT_INODE_NO;
     entry->rec_len = get_entry_record_len(1);
     entry->name_len = 1;
@@ -367,7 +439,8 @@ void create_ext2(void) {
     memcpy(get_entry_name(entry), ".", 1);
     uint16_t len_dot = entry->rec_len;
 
-    entry = get_next_directory_entry(entry);
+    // ".."
+    entry = get_next_directory_entry(entry); // Pastikan helper ini gak return NULL atau aneh
     entry->inode = ROOT_INODE_NO;
     entry->name_len = 2;
     entry->file_type = EXT2_FT_DIR;
@@ -377,21 +450,40 @@ void create_ext2(void) {
     write_blocks(&buffer, ROOT_DIR_BLOCK_LBA, 1);
 
     g_filesystem_initialized = true;
+    #ifdef FS_INSERTER
+    printf("    [create_ext2] DONE SUCCESS.\n"); fflush(stdout);
+    #endif
 }
-
 void initialize_filesystem_ext2(void) {
+    #ifdef FS_INSERTER
+    printf("  [ext2.c] Checking storage status...\n");
+    #endif
+
     if (is_empty_storage()) {
+        #ifdef FS_INSERTER
+        printf("  [ext2.c] Storage empty. Creating new FS...\n");
+        #endif
         create_ext2();
         g_filesystem_initialized = true;
     } else {
+        #ifdef FS_INSERTER
+        printf("  [ext2.c] Storage exists. Reading Superblock...\n");
+        #endif
         read_blocks(&_ext2_superblock_state, SUPERBLOCK_LBA, 1);
+        
+        #ifdef FS_INSERTER
+        printf("  [ext2.c] Reading BGDT...\n");
+        #endif
         read_blocks(&_ext2_bgdt_state.table[0], BGDT_LBA, 1);
+
         if (_ext2_superblock_state.s_magic == EXT2_SUPER_MAGIC) {
             g_filesystem_initialized = true;
         }
     }
+    #ifdef FS_INSERTER
+    printf("  [ext2.c] Init Done.\n");
+    #endif
 }
-
 // ==============================================================================
 // MEMORY MANAGEMENT (ALLOCATION)
 // ==============================================================================

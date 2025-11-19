@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <string.h> 
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+
+// Include header OS
 #include "../header/filesystem/ext2.h"
 #include "../header/driver/disk.h"
 
@@ -9,27 +13,50 @@
 #define BLOCK_SIZE 512
 #endif
 
-uint8_t *image_storage;
+#define STORAGE_SIZE (4 * 1024 * 1024)
 
-// --- MOCKING DRIVER DISK ---
-// Fungsi ini menggantikan disk.c kernel. 
-// Alih-alih baca port I/O, dia baca/tulis array RAM 'image_storage'.
+uint8_t *image_storage = NULL;
+// Kita definisikan ulang variabel ini khusus untuk konteks Inserter
+// agar tidak konflik linking dengan ext2.c
+bool g_filesystem_initialized_inserter = false;
 
-void read_blocks(void *ptr, uint32_t logical_block_address, uint8_t block_count) {
-    // Simulasi baca dari disk (copy dari image_storage ke buffer tujuan)
-    memcpy(ptr, image_storage + (logical_block_address * BLOCK_SIZE), block_count * BLOCK_SIZE);
+// Override fungsi extern dari ext2.c jika diperlukan, 
+// tapi biasanya ext2.c pakai variabel statis atau extern yang sama.
+// Kita biarkan ext2.c mengelola g_filesystem_initialized-nya sendiri.
+
+// --- MOCKING DRIVER ---
+void read_blocks(void *ptr, uint32_t lba, uint8_t count) {
+    if (!image_storage) { 
+        fprintf(stderr, "[CRASH] Image storage NULL at Read LBA %u\n", lba); 
+        exit(1); 
+    }
+    uint32_t offset = lba * BLOCK_SIZE;
+    uint32_t size   = count * BLOCK_SIZE;
+    if (offset + size > STORAGE_SIZE) {
+        fprintf(stderr, "[CRASH] Read Out of Bounds! LBA: %u\n", lba);
+        exit(1);
+    }
+    memcpy(ptr, image_storage + offset, size);
 }
 
-void write_blocks(const void *ptr, uint32_t logical_block_address, uint8_t block_count) {
-    // Simulasi tulis ke disk (copy dari buffer sumber ke image_storage)
-    memcpy(image_storage + (logical_block_address * BLOCK_SIZE), ptr, block_count * BLOCK_SIZE);
+void write_blocks(const void *ptr, uint32_t lba, uint8_t count) {
+    if (!image_storage) { 
+        fprintf(stderr, "[CRASH] Image storage NULL at Write LBA %u\n", lba); 
+        exit(1); 
+    }
+    uint32_t offset = lba * BLOCK_SIZE;
+    uint32_t size   = count * BLOCK_SIZE;
+    if (offset + size > STORAGE_SIZE) {
+        fprintf(stderr, "[CRASH] Write Out of Bounds! LBA: %u\n", lba);
+        exit(1);
+    }
+    memcpy(image_storage + offset, ptr, size);
 }
 // ---------------------------
 
 int main(int argc, char *argv[]) {
     if (argc < 4) {
-        fprintf(stderr, "Usage: %s <source_file> <target_filename> <parent_inode> <storage_path>\n", argv[0]);
-        fprintf(stderr, "Example: ./inserter bin/shell shell 2 bin/storage.bin\n");
+        fprintf(stderr, "Usage: %s <src> <tgt> <inode> <disk>\n", argv[0]);
         exit(1);
     }
 
@@ -38,83 +65,70 @@ int main(int argc, char *argv[]) {
     int parent_inode = atoi(argv[3]);
     char *storage_path = argv[4];
 
-    // 1. Buka dan Baca Storage.bin ke RAM
-    FILE *fptr_storage = fopen(storage_path, "rb+");
-    if (!fptr_storage) {
-        perror("Failed to open storage file");
-        return 1;
+    printf("[DEBUG] 1. Opening Storage: %s\n", storage_path);
+    FILE *fptr = fopen(storage_path, "rb+");
+    if (!fptr) {
+        fptr = fopen(storage_path, "wb+");
+        ftruncate(fileno(fptr), STORAGE_SIZE);
     }
+    
+    printf("[DEBUG] 2. Allocating RAM (%d bytes)\n", STORAGE_SIZE);
+    image_storage = calloc(1, STORAGE_SIZE);
+    if (!image_storage) return 1;
 
-    // Alokasi memori 4MB untuk disk image
-    image_storage = malloc(4 * 1024 * 1024);
-    fread(image_storage, 4 * 1024 * 1024, 1, fptr_storage);
+    printf("[DEBUG] 3. Reading Disk to RAM\n");
+    fseek(fptr, 0, SEEK_SET);
+    fread(image_storage, 1, STORAGE_SIZE, fptr);
 
-    // 2. Baca Source File (Program User yang mau dimasukkan)
-    FILE *fptr_source = fopen(source_path, "rb");
-    if (!fptr_source) {
-        perror("Failed to open source file");
-        return 1;
-    }
-
-    // Hitung ukuran file source
-    fseek(fptr_source, 0, SEEK_END);
-    size_t filesize = ftell(fptr_source);
-    fseek(fptr_source, 0, SEEK_SET);
-
-    // Baca file source ke buffer
-    uint8_t *file_buffer = malloc(filesize);
-    fread(file_buffer, filesize, 1, fptr_source);
-    fclose(fptr_source);
-
-    printf("Inserting: %s -> %s (Size: %lu bytes) into Inode %d\n", 
-            source_path, target_name, filesize, parent_inode);
-
-    // 3. Inisialisasi Filesystem State
-    // Ini akan membaca Superblock & BGDT dari image_storage (karena read_blocks kita mock)
+    printf("[DEBUG] 4. Initializing Filesystem...\n");
+    // Panggil fungsi init dari ext2.c
     initialize_filesystem_ext2();
+    
+    // HACK: Paksa variabel global di ext2.c jadi true
+    // Kita perlu cara mengakses variabel 'g_filesystem_initialized' di ext2.c
+    // Karena di C variabel global dishare, kita bisa set langsung jika extern.
+    extern bool g_filesystem_initialized;
+    g_filesystem_initialized = true;
+    printf("[DEBUG] 5. Filesystem Initialized.\n");
 
-    // 4. Siapkan Request Write
-    struct EXT2DriverRequest request;
-    memset(&request, 0, sizeof(struct EXT2DriverRequest));
-    request.parent_inode = parent_inode;
-    request.name = target_name;
-    request.name_len = strlen(target_name);
-    request.is_directory = false;
-    request.buffer_size = filesize;
-    request.buf = file_buffer;
+    printf("[DEBUG] 6. Reading Source File: %s\n", source_path);
+    FILE *fsrc = fopen(source_path, "rb");
+    if (!fsrc) { perror("Src not found"); return 1; }
+    fseek(fsrc, 0, SEEK_END);
+    size_t fsize = ftell(fsrc);
+    fseek(fsrc, 0, SEEK_SET);
+    
+    uint8_t *buf = malloc(fsize);
+    fread(buf, 1, fsize, fsrc);
+    fclose(fsrc);
 
-    // 5. Eksekusi Write
-    int8_t ret = write(&request);
+    printf("[DEBUG] 7. Preparing Write Request (Size: %lu)\n", fsize);
+    struct EXT2DriverRequest req;
+    memset(&req, 0, sizeof(req));
+    req.parent_inode = parent_inode;
+    req.name = target_name;
+    req.name_len = strlen(target_name);
+    req.is_directory = false;
+    req.buffer_size = fsize;
+    req.buf = buf;
 
-    // Handle jika file sudah ada (Overwrite logic)
+    printf("[DEBUG] 8. Executing write()...\n");
+    int8_t ret = write(&req);
+    
     if (ret == 1) {
-        printf("File exists. Deleting and rewriting...\n");
-        // Hapus file lama
-        int8_t del_ret = delete(request); // struct di-pass by value sesuai definisi baru lo
-        if (del_ret != 0) {
-            printf("Failed to delete existing file. Error: %d\n", del_ret);
-            return 1;
-        }
-        // Coba tulis lagi
-        ret = write(&request);
+        printf("[DEBUG] File exists, overwriting...\n");
+        delete(req);
+        ret = write(&req);
     }
 
     if (ret == 0) {
-        printf("Success inserting file!\n");
+        printf("[DEBUG] 9. Success! Saving to Disk...\n");
+        fseek(fptr, 0, SEEK_SET);
+        fwrite(image_storage, 1, STORAGE_SIZE, fptr);
     } else {
-        printf("Failed to insert file. Error code: %d\n", ret);
-        return 1;
+        printf("[DEBUG] FAILED. Error code: %d\n", ret);
     }
 
-    // 6. Simpan Perubahan ke Disk Fisik
-    // Kembalikan posisi pointer file storage ke awal
-    fseek(fptr_storage, 0, SEEK_SET);
-    // Tulis seluruh isi RAM image_storage balik ke file storage.bin
-    fwrite(image_storage, 4 * 1024 * 1024, 1, fptr_storage);
-    
-    fclose(fptr_storage);
-    free(image_storage);
-    free(file_buffer);
-
+    fclose(fptr);
     return 0;
 }

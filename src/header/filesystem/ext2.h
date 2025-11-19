@@ -85,37 +85,40 @@ struct EXT2Superblock
     uint32_t s_free_blocks_count;
     uint32_t s_free_inodes_count;
     uint32_t s_first_data_block;
-    // --- TAMBAHKAN INI ---
-    uint32_t s_log_block_size;    // Log2 of block size (0=1KB, 1=2KB, 2=4KB)
-    uint32_t s_log_frag_size;     // Log2 of fragment size (biasanya sama)
-    // ---------------------
+    uint32_t s_log_block_size;
+    uint32_t s_log_frag_size;
     uint32_t s_blocks_per_group;
     uint32_t s_frags_per_group;
     uint32_t s_inodes_per_group;
-    uint32_t s_mtime;             // Mount time
-    uint32_t s_wtime;             // Write time
-    uint16_t s_mnt_count;         // Mount count
-    uint16_t s_max_mnt_count;     // Max mount count
-    uint16_t s_magic;             // Magic signature (0xEF53)
-    uint16_t s_state;             // Filesystem state
-    uint16_t s_errors;            // Behaviour when detecting errors
-    uint16_t s_minor_rev_level;   // Minor revision level
-    uint32_t s_lastcheck;         // Time of last check
-    uint32_t s_checkinterval;     // Max time between checks
-    uint32_t s_creator_os;        // OS
-    uint32_t s_rev_level;         // Revision level
-    uint16_t s_def_resuid;        // Default uid for reserved blocks
-    uint16_t s_def_resgid;        // Default gid for reserved blocks
-    // --- EXT2_DYNAMIC_REV Specific (penting kalau rev_level >= 1) ---
-    uint32_t s_first_ino;         // First non-reserved inode (biasanya 11)
-    uint16_t s_inode_size;        // Size of inode structure (biasanya 128)
-    uint16_t s_block_group_nr;    // Block group # of this superblock
-    // ... (feature flags, uuid, volume name, dll. bisa ditambah kalau perlu) ...
-    // Pastikan total ukuran struct ini pas (biasanya 1024 byte), tambah padding jika perlu.
-    uint8_t padding[1024 - 104]; // Sesuaikan ukuran padding ini! Hitung ukuran field di atas dulu.
+    uint32_t s_mtime;
+    uint32_t s_wtime;
+    uint16_t s_mnt_count;
+    uint16_t s_max_mnt_count;
+    uint16_t s_magic;
+    uint16_t s_state;
+    uint16_t s_errors;
+    uint16_t s_minor_rev_level;
+    uint32_t s_lastcheck;
+    uint32_t s_checkinterval;
+    uint32_t s_creator_os;
+    uint32_t s_rev_level;
+    uint16_t s_def_resuid;
+    uint16_t s_def_resgid;
+    // --- EXT2_DYNAMIC_REV Specific ---
+    uint32_t s_first_ino;
+    uint16_t s_inode_size;
+    uint16_t s_block_group_nr;
+    uint32_t s_feature_compat;
+    uint32_t s_feature_incompat;
+    uint32_t s_feature_ro_compat;
+    uint8_t  s_uuid[16];
+    char     s_volume_name[16];
+    char     s_last_mounted[64];
+    uint32_t s_algo_bitmap;
 
-}__attribute__((packed));
-
+    // HAPUS PADDING INI BIAR GAK OVERFLOW DI BLOCK 512
+    // uint8_t padding[1024 - ...]; 
+} __attribute__((packed));
 
 /**
  * reference: 
@@ -326,7 +329,10 @@ void initialize_filesystem_ext2(void);
  */
 bool is_directory_empty(uint32_t inode);
 
-
+#ifdef FS_INSERTER
+    #define read ext2_read
+    #define write ext2_write
+#endif
 
 /* =============================== CRUD FUNC ======================================== */
 

@@ -69,10 +69,15 @@ user-shell:
 	@$(LIN) -T $(USER_DIR)/user-linker.ld -melf_i386 --oformat binary \
 		$(OUTPUT_FOLDER)/crt0.o $(OUTPUT_FOLDER)/shell.o -o $(OUTPUT_FOLDER)/shell
 	@echo "User Shell Compiled!"
+
 inserter:
-	@$(CC) -Wno-builtin-declaration-mismatch -g -I$(SOURCE_FOLDER) \
-		$(SOURCE_FOLDER)/stdlib/string.c \
+	@$(CC) -Wno-builtin-declaration-mismatch -g \
+		-I$(SOURCE_FOLDER) \
+		-D FS_INSERTER \
 		$(SOURCE_FOLDER)/filesystem/ext2.c \
 		$(SOURCE_FOLDER)/external/external-inserter.c \
 		-o $(OUTPUT_FOLDER)/inserter
 
+insert-shell: inserter user-shell
+	@echo "Inserting shell into storage..."
+	@$(OUTPUT_FOLDER)/inserter $(OUTPUT_FOLDER)/shell shell 2 $(OUTPUT_FOLDER)/$(DISK_NAME).bin
