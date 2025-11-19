@@ -37,8 +37,16 @@
 
 
 /* -- PICs IRQ list -- */
-#define SYSCALL_IO_READ      0
-#define SYSCALL_IO_WRITE     1
+#define SYSCALL_IO_READ        0
+#define SYSCALL_IO_WRITE       1
+#define SYSCALL_READ           0
+#define SYSCALL_READ_DIR       1
+#define SYSCALL_WRITE          2
+#define SYSCALL_DELETE         3
+#define SYSCALL_GETCHAR        4
+#define SYSCALL_PUTCHAR        5
+#define SYSCALL_PUTS           6
+#define SYSCALL_ACTIVATE_KBD   7
 // PIC Master
 #define IRQ_TIMER        0
 #define IRQ_KEYBOARD     1
