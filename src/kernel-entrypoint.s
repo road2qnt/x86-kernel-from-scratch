@@ -85,4 +85,3 @@ set_tss_register:
     ltr ax
     ret
 
-
