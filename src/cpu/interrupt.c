@@ -44,6 +44,9 @@ void main_interrupt_handler(struct InterruptFrame frame) {
             keyboard_isr();
             pic_ack(IRQ_KEYBOARD); // Lapor ke PIC "udah beres"
             break;
+        case PIC1_OFFSET + IRQ_TIMER:
+             pic_ack(IRQ_TIMER); 
+             break;
         
         default:
             // Biarin default ini buat nangkep interrupt lain

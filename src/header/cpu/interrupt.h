@@ -67,29 +67,31 @@
  * @param general CPU general purpose register (a, b, c, d)
  * @param segment CPU extra segment register (gs, fs, es, ds)
  */
+// Ganti struct CPURegister di interrupt.h lo menjadi ini:
+
 struct CPURegister {
-    struct {
-        uint32_t edi;
-        uint32_t esi;
-    } __attribute__((packed)) index;
-    struct {
-        uint32_t ebp;
-        uint32_t esp;
-    } __attribute__((packed)) stack;
-    struct {
-        uint32_t ebx;
-        uint32_t edx;
-        uint32_t ecx;
-        uint32_t eax;
-    } __attribute__((packed)) general;
+    // 1. Segment Registers (Dipush manual: GS, FS, ES, DS)
+    // Stack Low Address: GS, FS, ES, DS
     struct {
         uint32_t gs;
         uint32_t fs;
         uint32_t es;
         uint32_t ds;
     } __attribute__((packed)) segment;
-} __attribute__((packed));
 
+    // 2. General Registers (oleh PUSHAD: EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI)
+    // Stack Low Address: EAX, ECX, EDX, EBX, ESP_Orig, EBP, ESI, EDI
+    struct {
+        uint32_t eax;
+        uint32_t ecx;
+        uint32_t edx;
+        uint32_t ebx;
+        uint32_t esp;       // ESP asli sebelum pushad
+        uint32_t ebp;
+        uint32_t esi;
+        uint32_t edi;
+    } __attribute__((packed)) general; 
+} __attribute__((packed));
 /**
  * InterruptStack, data pushed by CPU when interrupt / exception is raised.
  * Refer to Intel x86 Vol 3a: Figure 6-4 Stack usage on transfer to Interrupt.
