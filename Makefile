@@ -8,6 +8,7 @@ SOURCE_FOLDER = src
 OUTPUT_FOLDER = bin
 ISO_NAME      = OS2025
 DISK_NAME     = storage
+USER_DIR 	  = src/user
 
 
 # Flags
@@ -33,7 +34,7 @@ kernel:
 	@$(ASM) $(AFLAGS) $(SOURCE_FOLDER)/kernel-entrypoint.s -o $(OUTPUT_FOLDER)/kernel-entrypoint.o
 	@$(ASM) $(AFLAGS) $(SOURCE_FOLDER)/cpu/intsetup.s -o $(OUTPUT_FOLDER)/intsetup.o
 	@$(ASM) $(AFLAGS) $(SOURCE_FOLDER)/cpu/usermode.s -o $(OUTPUT_FOLDER)/usermode.o	
-	
+
 	@echo Compiling C files...
 	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/kernel.c -o $(OUTPUT_FOLDER)/kernel.o
 	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/cpu/gdt.c -o $(OUTPUT_FOLDER)/gdt.o
@@ -62,6 +63,12 @@ iso: kernel
 disk:
 	@qemu-img create -f raw $(OUTPUT_FOLDER)/$(DISK_NAME).bin 4M
 
+user-shell:
+	@$(ASM) $(AFLAGS) $(USER_DIR)/crt0.s -o $(OUTPUT_FOLDER)/crt0.o
+	@$(CC)  $(CFLAGS) $(USER_DIR)/shell.c -o $(OUTPUT_FOLDER)/shell.o
+	@$(LIN) -T $(USER_DIR)/user-linker.ld -melf_i386 --oformat binary \
+		$(OUTPUT_FOLDER)/crt0.o $(OUTPUT_FOLDER)/shell.o -o $(OUTPUT_FOLDER)/shell
+	@echo "User Shell Compiled!"
 inserter:
 	@$(CC) -Wno-builtin-declaration-mismatch -g -I$(SOURCE_FOLDER) \
 		$(SOURCE_FOLDER)/stdlib/string.c \

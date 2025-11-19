@@ -37,7 +37,8 @@
 
 
 /* -- PICs IRQ list -- */
-
+#define SYSCALL_IO_READ      0
+#define SYSCALL_IO_WRITE     1
 // PIC Master
 #define IRQ_TIMER        0
 #define IRQ_KEYBOARD     1
@@ -159,4 +160,5 @@ void pic_remap(void);
 void main_interrupt_handler(struct InterruptFrame frame);
 void activate_keyboard_interrupt(void);
 void activate_timer_interrupt(void);
+void syscall_handler(struct InterruptFrame frame);
 #endif
