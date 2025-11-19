@@ -1,23 +1,105 @@
-#include <stdint.h>
+#include "header/cpu/gdt.h"
+#include "header/cpu/interrupt.h"
+#include "header/cpu/idt.h"
+#include "header/driver/framebuffer.h"
+#include "header/driver/keyboard.h"
+#include "header/filesystem/ext2.h"
+#include "header/memory/paging.h"
+#include "header/stdlib/string.h"
 
-// Definisi manual biar gak perlu include header lain yang mungkin bermasalah
-#define FRAMEBUFFER_MEMORY_OFFSET ((volatile uint16_t*) 0xC00B8000) // Virtual Address VGA
+// Deklarasi Global
+extern void enter_user_mode();
+extern struct PageDirectory _paging_kernel_page_directory; 
 
-void framebuffer_write_char(int row, int col, char c) {
-    volatile uint16_t *video_memory = FRAMEBUFFER_MEMORY_OFFSET;
-    uint16_t position = row * 80 + col;
-    video_memory[position] = (c | (0x0F << 8)); // Putih di Hitam
-}
+// Stack untuk TSS (Kernel Stack saat interrupt dari User Mode)
+#define KERNEL_STACK_SIZE 8192 
+char kernel_stack[KERNEL_STACK_SIZE]; 
 
 void kernel_setup(void) {
-    // JANGAN LOAD GDT
-    // JANGAN LOAD IDT
-    // JANGAN INIT FS
+    // ===============================================================
+    // FASE 1: SETUP INFRASTRUKTUR UTAMA (GDT/IDT/TSS)
+    // ===============================================================
     
-    // Cukup tulis satu huruf
-    framebuffer_write_char(0, 0, 'X');
-    framebuffer_write_char(0, 1, 'D');
+    // 1. Load GDT (Pake alamat virtual aman karena Paging udah ON dari Assembly)
+    load_gdt(&_gdt_gdtr);
+    
+    // 2. Reload Segment Registers (Wajib untuk sinkronisasi GDT baru)
+    // Kita gunakan wrapper assembly untuk memasukkan selector data (0x10)
+    asm volatile(
+        "mov %0, %%ax\n"
+        "mov %%ax, %%ds\n"
+        "mov %%ax, %%es\n"
+        "mov %%ax, %%fs\n"
+        "mov %%ax, %%gs\n"
+        "mov %%ax, %%ss\n"
+        : : "i"(GDT_KERNEL_DATA_SEGMENT_SELECTOR) : "ax", "memory"
+    );
 
-    // Loop diam
-    while(1);
+    // 3. Setup TSS (Biar bisa balik dari User Mode nanti)
+    init_tss();
+    // Set stack kernel ke puncak array kernel_stack
+    set_kernel_stack((uint32_t)kernel_stack + KERNEL_STACK_SIZE);
+    load_tss();
+
+    // 4. Setup Interrupts
+    pic_remap();
+    initialize_idt();
+    activate_keyboard_interrupt();
+    activate_timer_interrupt(); // Penting biar gak crash loop karena IRQ0
+    
+    // Aktifkan Interrupt Global
+    asm volatile("sti"); 
+
+    // ===============================================================
+    // FASE 2: DRIVERS & FILESYSTEM
+    // ===============================================================
+    framebuffer_clear();
+    framebuffer_set_cursor(0, 0);
+
+    initialize_filesystem_ext2();
+    if (g_filesystem_initialized) {
+        framebuffer_write(0, 0, 'F', GREEN, BLACK); // F = Filesystem OK
+    } else {
+        framebuffer_write(0, 0, 'X', RED, BLACK);
+    }
+
+    // ===============================================================
+    // FASE 3: SWITCH PAGING (Assembly -> C)
+    // ===============================================================
+    // Saat ini kita jalan pakai Page Table "sementara" dari Assembly.
+    // Kita harus switch ke Page Directory "resmi" (_paging_kernel_page_directory)
+    // supaya fungsi alokasi memori (paging_allocate) bekerja pada tabel yang aktif.
+    
+    // Hitung Alamat Fisik dari Page Directory C
+    // (Virtual Address - Offset 3GB)
+    uint32_t pd_physical = (uint32_t)&_paging_kernel_page_directory - 0xC0000000;
+    
+    // Load ke CR3
+    asm volatile(
+        "mov %0, %%cr3"
+        : /* No Output */
+        : "r"(pd_physical) /* Input */
+        : "memory"
+    );
+    
+    framebuffer_write(0, 1, 'P', GREEN, BLACK); // P = Paging Switched
+
+    // ===============================================================
+    // FASE 4: ENTER USER MODE (RING 3)
+    // ===============================================================
+    framebuffer_write(0, 2, 'R', GREEN, BLACK); // R = Ready
+
+    // 1. Alokasi Memori untuk Stack User (di alamat virtual 0x200000)
+    void *user_stack_vaddr = (void*)0x800000; 
+    if (paging_allocate_user_page_frame(&_paging_kernel_page_directory, user_stack_vaddr)) {
+        framebuffer_write(0, 3, 'S', GREEN, BLACK); // S = Stack Mapped
+    } else {
+        framebuffer_write(0, 3, 'E', RED, BLACK); // E = Error Alloc
+        while(true);
+    }
+
+    // 2. Lompat! (Tujuannya masih kosong/sampah, jadi wajar kalau crash setelah ini)
+    enter_user_mode();
+
+    while(true);
 }

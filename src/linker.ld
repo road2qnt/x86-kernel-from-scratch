@@ -1,18 +1,24 @@
-ENTRY(loader_physical)                /* the name of the entry label */
-/* Relocation address 0xC0010000, but load address (physical location) 0x100000 */
+ENTRY(loader_physical)
+
 SECTIONS {
-    . = 0xC0100000;          /* use relocation address at 0xC0100000 */
-    /* Linker variable that can be used in kernel */
-    _linker_kernel_virtual_addr_start  = .; 
-    _linker_kernel_physical_addr_start = . - 0xC0000000; 
+    . = 0xC0100000;
+
+    _linker_kernel_virtual_addr_start  = .;
+    _linker_kernel_physical_addr_start = . - 0xC0000000;
+
     .multiboot ALIGN (0x1000) : AT (ADDR (.multiboot) - 0xC0000000) {
-        *(.multiboot)        /* put GRUB multiboot header at front */
+        *(.multiboot)
     }
+
+    /* --- TAMBAHKAN INI --- */
+    .setup.data ALIGN (0x1000) : AT (ADDR (.setup.data) - 0xC0000000) {
+        *(.setup.data)
+    }
+    /* --------------------- */
 
     .setup.text ALIGN (0x1000) : AT (ADDR (.setup.text) - 0xC0000000) {
-        *(.setup.text)       /* initial setup code */
+        *(.setup.text)
     }
-
     .text ALIGN (0x1000) : AT (ADDR (.text) - 0xC0000000) {
         *(.text)             /* all text sections from all files */
     }

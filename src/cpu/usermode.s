@@ -15,7 +15,7 @@ enter_user_mode:
     mov gs, ax
 
     push dword 0x23       ; SS
-    push dword 0x600000   ; ESP (Pastikan ini valid)
+    push dword 0xC00000   ; ESP (Pastikan ini valid)
     push dword 0x202      ; EFLAGS
     push dword 0x1B       ; CS
     push dword 0x400000   ; EIP (Lokasi program user nanti)
