@@ -1,4 +1,4 @@
-ENTRY(loader)                /* the name of the entry label */
+ENTRY(loader_physical)                /* the name of the entry label */
 /* Relocation address 0xC0010000, but load address (physical location) 0x100000 */
 SECTIONS {
     . = 0xC0100000;          /* use relocation address at 0xC0100000 */

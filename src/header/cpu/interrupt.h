@@ -70,27 +70,30 @@
 // Ganti struct CPURegister di interrupt.h lo menjadi ini:
 
 struct CPURegister {
-    // 1. Segment Registers (Dipush manual: GS, FS, ES, DS)
-    // Stack Low Address: GS, FS, ES, DS
-    struct {
-        uint32_t gs;
-        uint32_t fs;
-        uint32_t es;
-        uint32_t ds;
-    } __attribute__((packed)) segment;
+    // Stack Low Address -> High Address
 
-    // 2. General Registers (oleh PUSHAD: EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI)
-    // Stack Low Address: EAX, ECX, EDX, EBX, ESP_Orig, EBP, ESI, EDI
+    // 1. General Registers (Dipush oleh PUSHAD)
+    // Urutan C harus membalik PUSHAD: EDI, ESI, EBP, ESP_ORIGINAL, EBX, EDX, ECX, EAX
     struct {
-        uint32_t eax;
-        uint32_t ecx;
-        uint32_t edx;
-        uint32_t ebx;
-        uint32_t esp;       // ESP asli sebelum pushad
-        uint32_t ebp;
-        uint32_t esi;
         uint32_t edi;
+        uint32_t esi;
+        uint32_t ebp;
+        uint32_t esp;       // ESP asli sebelum pushad
+        uint32_t ebx;
+        uint32_t edx;
+        uint32_t ecx;
+        uint32_t eax;
     } __attribute__((packed)) general; 
+
+    // 2. Segment Registers (Dipush manual: GS, FS, ES, DS)
+    // Urutan push: GS (tertinggi), FS, ES, DS (terendah).
+    // C harus membaca dari urutan terakhir dipush: DS, ES, FS, GS.
+    struct {
+        uint32_t ds; // Stack Low (paling dekat dengan General Registers)
+        uint32_t es;
+        uint32_t fs;
+        uint32_t gs; // Stack High (paling jauh)
+    } __attribute__((packed)) segment; 
 } __attribute__((packed));
 /**
  * InterruptStack, data pushed by CPU when interrupt / exception is raised.
@@ -155,4 +158,5 @@ void pic_remap(void);
  */
 void main_interrupt_handler(struct InterruptFrame frame);
 void activate_keyboard_interrupt(void);
+void activate_timer_interrupt(void);
 #endif

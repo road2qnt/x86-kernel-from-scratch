@@ -3,7 +3,13 @@ global load_gdt                      ; load GDT table
 global set_tss_register              ; set tss register to GDT entry
 extern kernel_setup                  ; kernel C entrypoint
 extern _paging_kernel_page_directory ; kernel page directory
+; Tambahkan label global untuk alamat fisik loader
+global loader_physical
 
+; Hitung alamat fisik (VMA - Offset)
+loader_physical equ (loader_entrypoint - KERNEL_VIRTUAL_BASE)
+
+; ... (sisa kode sama)
 KERNEL_VIRTUAL_BASE equ 0xC0000000    ; kernel virtual memory
 KERNEL_STACK_SIZE   equ 2097152       ; size of stack in bytes
 MAGIC_NUMBER        equ 0x1BADB002    ; define the magic number constant
@@ -47,12 +53,17 @@ loader_entrypoint:         ; the loader label (defined as entry point in linker 
     jmp eax
 
 loader_virtual:
-    mov dword [_paging_kernel_page_directory], 0
-    invlpg [0]                                ; Delete identity mapping and invalidate TLB cache for first page
-    mov esp, kernel_stack + KERNEL_STACK_SIZE ; Setup stack register to proper location
+    ; --- MODIFIKASI DISINI ---
+    ; JANGAN hapus mapping 0-4MB dulu. Biarin aja biar aman.
+    ; Komen 2 baris ini:
+    ; mov dword [_paging_kernel_page_directory], 0
+    ; invlpg [0]
+    ; -------------------------
+
+    mov esp, kernel_stack + KERNEL_STACK_SIZE 
     call kernel_setup
 .loop:
-    jmp .loop                                 ; loop forever
+    jmp .loop                                ; loop forever
 
 
 section .text

@@ -56,4 +56,10 @@ void main_interrupt_handler(struct InterruptFrame frame) {
 void activate_keyboard_interrupt(void) {
     // mask n unmask
     out(PIC1_DATA, in(PIC1_DATA) & ~(1 << IRQ_KEYBOARD));
+
+}
+
+void activate_timer_interrupt(void) {
+    // Unmask IRQ0 (Timer) pada Master PIC
+    out(PIC1_DATA, in(PIC1_DATA) & ~(1 << IRQ_TIMER));
 }
