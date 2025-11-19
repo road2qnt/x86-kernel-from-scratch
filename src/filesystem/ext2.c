@@ -10,7 +10,7 @@
 
 static struct EXT2Superblock _ext2_superblock_state;
 static struct EXT2BlockGroupDescriptorTable _ext2_bgdt_state;
-static bool g_filesystem_initialized = false;
+bool g_filesystem_initialized = false;
 
 const uint8_t fs_signature[BLOCK_SIZE] = {
     'R', 'E', 'N', 'D', 'A', 'N', 'G', 'O', 'S', ' ', 'F', 'S', ' ', 'v', '1', '.',

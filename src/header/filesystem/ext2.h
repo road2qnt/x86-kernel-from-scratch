@@ -412,5 +412,5 @@ void allocate_node_blocks(void *ptr, struct EXT2Inode *node, uint32_t prefered_b
  * @param inode location of the node
  */
 void sync_node(struct EXT2Inode *node, uint32_t inode);
-
+extern bool g_filesystem_initialized;
 #endif
