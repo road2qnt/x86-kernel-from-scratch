@@ -2,41 +2,45 @@ extern main_interrupt_handler
 global isr_stub_table
 
 call_generic_handler:
-    ; 1. Push General Registers (PUSHAD)
+    ; 1. Push General & Segment Registers
     pushad
-    
-    ; 2. Push Segment Registers (Sesuai order C: DS, ES, FS, GS)
     push ds
     push es
     push fs
     push gs
 
-    ; 3. Set segment registers to kernel_code (0x10)
-    push eax
-    mov ax, 0x10
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    pop eax
+    ; 2. Prepare arguments for C function: main_interrupt_handler(struct CPURegister *regs, uint32_t int_number)
+    mov eax, esp        ; Arg1: Pointer to the saved register state
+    mov ebx, [esp+48]   ; Arg2: Get int_number from the stack (pushed by macro). 4*4 gs-ds + 8*4 pushad = 48 bytes offset
+    push ebx            ; Push Arg2
+    push eax            ; Push Arg1
+    
+    ; 3. Set segment registers for C kernel execution
+    push edx  ; Save edx
+    mov dx, 0x10
+    mov ds, dx
+    mov es, dx
+    pop edx   ; Restore edx
 
     ; 4. Call the C function
     call main_interrupt_handler
 
-    ; 5. Restore segment registers (Pop order reversed from push)
+    ; 5. Cleanup arguments
+    add esp, 8
+
+    ; 6. Restore segment registers
     pop gs
     pop fs
     pop es
     pop ds
 
-    ; 6. Restore general-purpose & index register
+    ; 7. Restore general-purpose registers
     popad
 
-    ; 7. Restore the esp (interrupt number & error code)
+    ; 8. Pop error code and interrupt number
     add esp, 8
 
-    ; 8. Return
-    sti
+    ; 9. Return from interrupt
     iret
 
 ; Macro and handler definitions

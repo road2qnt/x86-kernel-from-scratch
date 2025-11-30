@@ -69,75 +69,30 @@
 
 
 /**
- * CPURegister, store CPU registers values.
+ * CPURegister, store CPU registers values pushed by intsetup.s.
  * 
- * @param index   CPU index register (di, si)
- * @param stack   CPU stack register (bp, sp)
- * @param general CPU general purpose register (a, b, c, d)
- * @param segment CPU extra segment register (gs, fs, es, ds)
+ * @param segment Pushed segment registers
+ * @param general Pushed general purpose registers from PUSHAD
  */
-// Ganti struct CPURegister di interrupt.h lo menjadi ini:
-
 struct CPURegister {
-    // Stack Low Address -> High Address
+    struct {
+        uint32_t gs;
+        uint32_t fs;
+        uint32_t es;
+        uint32_t ds;
+    } __attribute__((packed)) segment; 
 
-    // 1. General Registers (Dipush oleh PUSHAD)
-    // Urutan C harus membalik PUSHAD: EDI, ESI, EBP, ESP_ORIGINAL, EBX, EDX, ECX, EAX
     struct {
         uint32_t edi;
         uint32_t esi;
         uint32_t ebp;
-        uint32_t esp;       // ESP asli sebelum pushad
+        uint32_t esp_useless;
         uint32_t ebx;
         uint32_t edx;
         uint32_t ecx;
         uint32_t eax;
     } __attribute__((packed)) general; 
-
-    // 2. Segment Registers (Dipush manual: GS, FS, ES, DS)
-    // Urutan push: GS (tertinggi), FS, ES, DS (terendah).
-    // C harus membaca dari urutan terakhir dipush: DS, ES, FS, GS.
-    struct {
-        uint32_t ds; // Stack Low (paling dekat dengan General Registers)
-        uint32_t es;
-        uint32_t fs;
-        uint32_t gs; // Stack High (paling jauh)
-    } __attribute__((packed)) segment; 
 } __attribute__((packed));
-/**
- * InterruptStack, data pushed by CPU when interrupt / exception is raised.
- * Refer to Intel x86 Vol 3a: Figure 6-4 Stack usage on transfer to Interrupt.
- * 
- * Note, when returning from interrupt handler with iret, esp must be pointing to eip pushed before 
- * or in other words, CPURegister, int_number and error_code should be pop-ed from stack.
- * 
- * @param error_code Error code that pushed with the exception
- * @param eip        Instruction pointer where interrupt is raised
- * @param cs         Code segment selector where interrupt is raised
- * @param eflags     CPU eflags register when interrupt is raised
- */
-struct InterruptStack {
-    uint32_t error_code;
-    uint32_t eip;
-    uint32_t cs;
-    uint32_t eflags;
-} __attribute__((packed));
-
-/**
- * InterruptFrame, entirety of general CPU states exactly before interrupt.
- * When used for interrupt handler, cpu.stack is kernel state before C function called,
- * not user stack when it get called. Check InterruptStack and interprivilege interrupt for more detail.
- * 
- * @param cpu        CPU state
- * @param int_number Interrupt vector value
- * @param int_stack  Hardware-defined (x86) stack state, note: will not access interprivilege ss and esp
- */
-struct InterruptFrame {
-    struct CPURegister    cpu;
-    uint32_t              int_number;
-    struct InterruptStack int_stack;
-} __attribute__((packed));
-
 
 
 // Activate PIC mask for keyboard only
@@ -154,19 +109,11 @@ void pic_remap(void);
 
 /**
  * Main interrupt handler when any interrupt / exception is raised.
- * DO NOT CALL THIS FUNCTION.
- * 
- * This function will be called first if any INT 0x00 - 0x40 is raised, 
- * and will call proper ISR for respective interrupt / exception.
- * 
- * If inter-privilege interrupt raised, SS and ESP is automatically out of main_interrupt_handler()
- * parameter. Can be checked with ((int*) info) + 4 for user $esp, 5 for user $ss
- * 
- * Again, this function is not for normal function call, all parameter will be automatically set when interrupt is called.
- * @param frame Information about CPU during interrupt is raised
+ * @param regs Pointer to saved CPU registers
+ * @param int_number The interrupt vector number
  */
-void main_interrupt_handler(struct InterruptFrame frame);
+void main_interrupt_handler(struct CPURegister *regs, uint32_t int_number);
 void activate_keyboard_interrupt(void);
 void activate_timer_interrupt(void);
-void syscall_handler(struct InterruptFrame frame);
+
 #endif

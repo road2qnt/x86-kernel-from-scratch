@@ -20,9 +20,9 @@ AFLAGS        = -f elf32 -g -F dwarf
 LFLAGS        = -T $(SOURCE_FOLDER)/linker.ld -melf_i386
 
 run: all
-	@qemu-system-i386 -s -S -drive file=$(OUTPUT_FOLDER)/storage.bin,format=raw,if=ide,index=0,media=disk -cdrom $(OUTPUT_FOLDER)/$(ISO_NAME).iso
+	@qemu-system-i386  -drive file=$(OUTPUT_FOLDER)/storage.bin,format=raw,if=ide,index=0,media=disk -cdrom $(OUTPUT_FOLDER)/$(ISO_NAME).iso
 
-all: build disk
+all: build insert-shell 
 build: iso
 
 clean:
@@ -78,6 +78,6 @@ inserter:
 		$(SOURCE_FOLDER)/external/external-inserter.c \
 		-o $(OUTPUT_FOLDER)/inserter
 
-insert-shell: inserter user-shell
+insert-shell: disk inserter user-shell
 	@echo "Inserting shell into storage..."
 	@$(OUTPUT_FOLDER)/inserter $(OUTPUT_FOLDER)/shell shell 2 $(OUTPUT_FOLDER)/$(DISK_NAME).bin

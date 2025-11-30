@@ -33,6 +33,7 @@ void initialize_idt(void) {
         set_interrupt_gate(i, isr_stub_table[i], GDT_KERNEL_CODE_SEGMENT_SELECTOR, 0);
     }
     set_interrupt_gate(0x80, isr_stub_table[0x80], GDT_KERNEL_CODE_SEGMENT_SELECTOR, 3);
+    interrupt_descriptor_table.table[0x80].gate_type = 0b01111; // 32-bit Trap Gate for syscall
     
     __asm__ volatile("lidt %0" : : "m"(_idt_idtr));
     __asm__ volatile("sti");

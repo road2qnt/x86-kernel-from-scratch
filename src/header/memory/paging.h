@@ -19,9 +19,11 @@ extern struct PageDirectory _paging_kernel_page_directory;
 
 
 /**
- * Page Directory Entry Flag, only first 8 bit
- * Referensi: Intel Manual 3a - 4.3 32-BIT PAGING - Figure 4-4
- * * @param present_bit       1: Halaman ada di memori, 0: Tidak ada (Page Fault)
+ * Page Directory Entry, for page size 4 MB.
+ * Check Intel Manual 3a - Ch 4 Paging - Figure 4-4 PDE: 4MB page
+ *
+ * Total: 32-bit (4 Byte)
+ * @param present_bit       1: Halaman ada di memori, 0: Tidak ada (Page Fault)
  * @param write_bit         1: Read/Write, 0: Read-only
  * @param user_bit          1: User Mode (Ring 3), 0: Kernel Mode (Ring 0)
  * @param pwt_bit           Page-level Write-Through (Caching policy)
@@ -29,37 +31,26 @@ extern struct PageDirectory _paging_kernel_page_directory;
  * @param accessed_bit      1: Halaman pernah diakses (dibaca/tulis) oleh CPU
  * @param dirty_bit         1: Halaman pernah ditulis (modifikasi) oleh CPU
  * @param use_pagesize_4_mb 1: Menggunakan ukuran halaman 4 MB (WAJIB 1 di tubes ini)
- */
-struct PageDirectoryEntryFlag {
-    uint8_t present_bit        : 1;
-    uint8_t write_bit          : 1;
-    uint8_t user_bit           : 1;
-    uint8_t pwt_bit            : 1;
-    uint8_t pcd_bit            : 1;
-    uint8_t accessed_bit       : 1;
-    uint8_t dirty_bit          : 1;
-    uint8_t use_pagesize_4_mb  : 1; // Bit ke-7 (PS Bit)
-} __attribute__((packed));
-
-/**
- * Page Directory Entry, for page size 4 MB.
- * Check Intel Manual 3a - Ch 4 Paging - Figure 4-4 PDE: 4MB page
- *
- * Total: 32-bit (4 Byte)
- * - Bit 0-7   : Flags (struct PageDirectoryEntryFlag)
- * - Bit 8     : Global Page (Ignored if CR4.PGE = 0)
- * - Bit 9-11  : Available for OS (Ignored by hardware)
- * - Bit 12    : PAT (Page Attribute Table)
- * - Bit 13-21 : Reserved (Must be 0 for 32-bit non-PAE)
- * - Bit 22-31 : Address (10-bit High Address) -> Menunjuk ke fisik 4MB-aligned
+ * @param global_page       Global Page (Ignored if CR4.PGE = 0)
+ * @param available         Available for OS (Ignored by hardware)
+ * @param pat               PAT (Page Attribute Table)
+ * @param reserved_high     Reserved (Must be 0 for 32-bit non-PAE)
+ * @param lower_address     Address (10-bit High Address) -> Menunjuk ke fisik 4MB-aligned
  */
 struct PageDirectoryEntry {
-    struct PageDirectoryEntryFlag flag;
-    uint16_t global_page    : 1;
-    uint16_t available      : 3;
-    uint16_t pat            : 1;
-    uint16_t reserved_high  : 9;
-    uint16_t lower_address  : 10;
+    uint32_t present_bit        : 1;
+    uint32_t write_bit          : 1;
+    uint32_t user_bit           : 1;
+    uint32_t pwt_bit            : 1;
+    uint32_t pcd_bit            : 1;
+    uint32_t accessed_bit       : 1;
+    uint32_t dirty_bit          : 1;
+    uint32_t use_pagesize_4_mb  : 1;
+    uint32_t global_page        : 1;
+    uint32_t available          : 3;
+    uint32_t pat                : 1;
+    uint32_t reserved_high      : 9;
+    uint32_t lower_address      : 10;
 } __attribute__((packed));
 
 /**
@@ -82,19 +73,7 @@ struct PageManagerState {
 } __attribute__((packed));
 
 
-/**
- * Edit page directory with respective parameter
- * * @param page_dir      Page directory to update
- * @param physical_addr Physical address to map
- * @param virtual_addr  Virtual address to map
- * @param flag          Page entry flags
- */
-void update_page_directory_entry(
-    struct PageDirectory *page_dir,
-    void *physical_addr, 
-    void *virtual_addr, 
-    struct PageDirectoryEntryFlag flag
-);
+
 
 /**
  * Invalidate page that contain virtual address in parameter
