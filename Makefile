@@ -19,8 +19,13 @@ CFLAGS        = $(DEBUG_CFLAG) $(WARNING_CFLAG) $(STRIP_CFLAG) -m32 -c -I$(SOURC
 AFLAGS        = -f elf32 -g -F dwarf
 LFLAGS        = -T $(SOURCE_FOLDER)/linker.ld -melf_i386
 
+# Run with rebuild (first time / after code changes)
 run: all
-	@qemu-system-i386  -drive file=$(OUTPUT_FOLDER)/storage.bin,format=raw,if=ide,index=0,media=disk -cdrom $(OUTPUT_FOLDER)/$(ISO_NAME).iso
+	@qemu-system-i386 -drive file=$(OUTPUT_FOLDER)/storage.bin,format=raw,if=ide,index=0,media=disk -cdrom $(OUTPUT_FOLDER)/$(ISO_NAME).iso
+
+# Run WITHOUT rebuild (keeps your data!)
+run-only:
+	@qemu-system-i386 -drive file=$(OUTPUT_FOLDER)/storage.bin,format=raw,if=ide,index=0,media=disk -cdrom $(OUTPUT_FOLDER)/$(ISO_NAME).iso
 
 all: build insert-shell 
 build: iso
@@ -28,6 +33,23 @@ build: iso
 clean:
 	@echo Cleaning up...
 	@rm -rf $(OUTPUT_FOLDER)/*
+
+# Kernel object files 
+KERNEL_OBJS = \
+	$(OUTPUT_FOLDER)/kernel-entrypoint.o \
+	$(OUTPUT_FOLDER)/intsetup.o \
+	$(OUTPUT_FOLDER)/usermode.o \
+	$(OUTPUT_FOLDER)/kernel.o \
+	$(OUTPUT_FOLDER)/gdt.o \
+	$(OUTPUT_FOLDER)/interrupt.o \
+	$(OUTPUT_FOLDER)/idt.o \
+	$(OUTPUT_FOLDER)/framebuffer.o \
+	$(OUTPUT_FOLDER)/portio.o \
+	$(OUTPUT_FOLDER)/string.o \
+	$(OUTPUT_FOLDER)/keyboard.o \
+	$(OUTPUT_FOLDER)/disk.o \
+	$(OUTPUT_FOLDER)/ext2.o \
+	$(OUTPUT_FOLDER)/paging.o
 
 kernel:
 	@echo Assembling files...
@@ -48,7 +70,7 @@ kernel:
 	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/filesystem/ext2.c -o $(OUTPUT_FOLDER)/ext2.o
 	@$(CC) $(CFLAGS) $(SOURCE_FOLDER)/memory/paging.c -o $(OUTPUT_FOLDER)/paging.o
 	@echo Linking object files...
-	@$(LIN) $(LFLAGS) $(OUTPUT_FOLDER)/*.o -o $(OUTPUT_FOLDER)/kernel
+	@$(LIN) $(LFLAGS) $(KERNEL_OBJS) -o $(OUTPUT_FOLDER)/kernel
 
 iso: kernel
 	@echo Creating ISO image...
@@ -61,11 +83,16 @@ iso: kernel
 
 
 disk:
-	@qemu-img create -f raw $(OUTPUT_FOLDER)/$(DISK_NAME).bin 4M
+	@if [ ! -f $(OUTPUT_FOLDER)/$(DISK_NAME).bin ]; then \
+		echo "Creating new disk image..."; \
+		qemu-img create -f raw $(OUTPUT_FOLDER)/$(DISK_NAME).bin 4M; \
+	else \
+		echo "Using existing disk image..."; \
+	fi
 
 user-shell:
 	@$(ASM) $(AFLAGS) $(USER_DIR)/crt0.s -o $(OUTPUT_FOLDER)/crt0.o
-	@$(CC)  $(CFLAGS) $(USER_DIR)/shell.c -o $(OUTPUT_FOLDER)/shell.o
+	@$(CC)  $(CFLAGS) -fno-pic -fno-pie $(USER_DIR)/shell.c -o $(OUTPUT_FOLDER)/shell.o
 	@$(LIN) -T $(USER_DIR)/user-linker.ld -melf_i386 --oformat binary \
 		$(OUTPUT_FOLDER)/crt0.o $(OUTPUT_FOLDER)/shell.o -o $(OUTPUT_FOLDER)/shell
 	@echo "User Shell Compiled!"
@@ -80,4 +107,11 @@ inserter:
 
 insert-shell: disk inserter user-shell
 	@echo "Inserting shell into storage..."
-	@$(OUTPUT_FOLDER)/inserter $(OUTPUT_FOLDER)/shell shell 2 $(OUTPUT_FOLDER)/$(DISK_NAME).bin
+	@cd $(OUTPUT_FOLDER) && ./inserter shell shell 2 $(DISK_NAME).bin
+
+# Force recreate disk (use when you want fresh storage)
+reset-disk:
+	@echo "Removing old disk image..."
+	@rm -f $(OUTPUT_FOLDER)/$(DISK_NAME).bin
+	@echo "Creating new disk image..."
+	@qemu-img create -f raw $(OUTPUT_FOLDER)/$(DISK_NAME).bin 4M
