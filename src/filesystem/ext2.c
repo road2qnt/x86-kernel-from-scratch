@@ -518,11 +518,24 @@ int8_t read_directory(struct EXT2DriverRequest *prequest) {
 
     if (dir_inode.i_block[0] == 0) return 0;
 
+    // Read multiple blocks if buffer is large enough
+    uint8_t *out = (uint8_t *)prequest->buf;
+    uint32_t bytes_copied = 0;
     struct BlockBuffer buf;
-    read_blocks(&buf, dir_inode.i_block[0], 1);
     
-    uint32_t copy_size = (BLOCK_SIZE < prequest->buffer_size) ? BLOCK_SIZE : prequest->buffer_size;
-    memcpy(prequest->buf, buf.buf, copy_size);
+    for (int i = 0; i < 12 && bytes_copied < prequest->buffer_size; i++) {
+        if (dir_inode.i_block[i] == 0) break;
+        
+        read_blocks(&buf, dir_inode.i_block[i], 1);
+        
+        uint32_t copy_size = BLOCK_SIZE;
+        if (prequest->buffer_size - bytes_copied < BLOCK_SIZE) {
+            copy_size = prequest->buffer_size - bytes_copied;
+        }
+        
+        memcpy(out + bytes_copied, buf.buf, copy_size);
+        bytes_copied += copy_size;
+    }
     
     return 0;
 }

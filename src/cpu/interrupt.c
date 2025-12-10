@@ -237,16 +237,3 @@ void activate_keyboard_interrupt(void) {
 void activate_timer_interrupt(void) {
     out(PIC1_DATA, in(PIC1_DATA) & ~(1 << IRQ_TIMER));
 }
-
-struct TSSEntry _interrupt_tss_entry = {
-    .ss0 = GDT_KERNEL_DATA_SEGMENT_SELECTOR,
-};
-
-void set_tss_kernel_current_stack(void) {
-    uint32_t stack_ptr;
-    // Reading base stack frame instead esp
-    __asm__ volatile ("mov %%ebp, %0": "=r"(stack_ptr) : /* <Empty> */);
-    // Add 8 because 4 for ret address and other 4 is for stack_ptr variable
-    _interrupt_tss_entry.esp0 = stack_ptr + 8;
-}
-   

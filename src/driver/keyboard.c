@@ -32,7 +32,6 @@ static struct KeyboardDriverState keyboard_state = {
 };
 
 void keyboard_state_activate(void) {
-    framebuffer_write(24, 77, 'K', 0xF, 0); // DEBUG
     keyboard_state.keyboard_input_on = true;
 }
 

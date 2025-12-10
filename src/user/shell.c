@@ -261,7 +261,7 @@ static char arg1[128];
 static char arg2[128];
 
 // Buffers for filesystem operations
-static uint8_t dir_buffer[512];
+static uint8_t dir_buffer[4096];    // 4KB for larger directories
 static uint8_t file_buffer[32768];  // 32KB for larger files
 
 // COMMAND PARSING
@@ -330,7 +330,7 @@ void cmd_cd(const char *path) {
             if (ret == 0) {
                 // Find ".." entry
                 uint32_t offset = 0;
-                while (offset < 512) {
+                while (offset < sizeof(dir_buffer)) {
                     struct EXT2DirectoryEntry *entry = (struct EXT2DirectoryEntry*)(dir_buffer + offset);
                     if (entry->inode == 0 || entry->rec_len == 0) break;
                     
@@ -366,7 +366,7 @@ void cmd_cd(const char *path) {
     
     // Search for the path
     uint32_t offset = 0;
-    while (offset < 512) {
+    while (offset < sizeof(dir_buffer)) {
         struct EXT2DirectoryEntry *entry = (struct EXT2DirectoryEntry*)(dir_buffer + offset);
         if (entry->inode == 0 || entry->rec_len == 0) break;
         
@@ -419,7 +419,7 @@ void cmd_ls(void) {
     }
     
     uint32_t offset = 0;
-    while (offset < 512) {
+        while (offset < sizeof(dir_buffer)) {
         struct EXT2DirectoryEntry *entry = (struct EXT2DirectoryEntry*)(dir_buffer + offset);
         if (entry->inode == 0 || entry->rec_len == 0) break;
         
@@ -578,15 +578,26 @@ void cmd_cp(const char *src, const char *dst) {
     
     syscall(SYSCALL_WRITE, (uint32_t)&write_req, (uint32_t)&ret, 0);
     
+    if (ret == 1) {
+        // Destination exists - delete and retry (overwrite behavior)
+        struct EXT2DriverRequest del_req = {
+            .name = (char*)dst,
+            .name_len = strlen(dst),
+            .parent_inode = current_dir_inode,
+            .is_directory = false
+        };
+        int8_t del_ret;
+        syscall(SYSCALL_DELETE, (uint32_t)&del_req, (uint32_t)&del_ret, 0);
+        
+        // Retry write
+        syscall(SYSCALL_WRITE, (uint32_t)&write_req, (uint32_t)&ret, 0);
+    }
+    
     if (ret == 0) {
         puts("Copied: ", GREEN);
         puts(src, GREEN);
         puts(" -> ", WHITE);
         puts(dst, GREEN);
-        puts("\n", WHITE);
-    } else if (ret == 1) {
-        puts("cp: Destination already exists: ", RED);
-        puts(dst, RED);
         puts("\n", WHITE);
     } else {
         puts("cp: Failed to copy\n", RED);
@@ -718,10 +729,7 @@ void cmd_mv(const char *src, const char *dst) {
         return;
     }
     
-    if (file_size == 0) {
-        puts("mv: Source file is empty or error\n", RED);
-        return;
-    }
+    // Note: file_size == 0 is valid (empty file), only -1 is error
     
     if ((uint32_t)file_size > sizeof(file_buffer)) {
         puts("mv: File too large\n", RED);
@@ -817,22 +825,30 @@ void cmd_clear(void) {
 #define FIND_MAX_DEPTH 32
 
 static uint32_t find_stack[FIND_MAX_DEPTH];  // Stack of inode numbers
-static char find_paths[FIND_MAX_DEPTH][128]; // Stack of paths
+static char find_paths[FIND_MAX_DEPTH][256]; // Stack of paths (larger buffer)
 static int find_sp = 0;  // Stack pointer
 
 void find_push(uint32_t inode, const char *path) {
     if (find_sp < FIND_MAX_DEPTH) {
         find_stack[find_sp] = inode;
-        strcpy(find_paths[find_sp], path);
+        // Safe copy with bounds check
+        uint32_t len = strlen(path);
+        if (len >= sizeof(find_paths[0])) len = sizeof(find_paths[0]) - 1;
+        memcpy(find_paths[find_sp], path, len);
+        find_paths[find_sp][len] = 0;
         find_sp++;
     }
 }
 
-bool find_pop(uint32_t *inode, char *path) {
+bool find_pop(uint32_t *inode, char *path, uint32_t path_size) {
     if (find_sp > 0) {
         find_sp--;
         *inode = find_stack[find_sp];
-        strcpy(path, find_paths[find_sp]);
+        // Safe copy with bounds check
+        uint32_t len = strlen(find_paths[find_sp]);
+        if (len >= path_size) len = path_size - 1;
+        memcpy(path, find_paths[find_sp], len);
+        path[len] = 0;
         return true;
     }
     return false;
@@ -855,10 +871,10 @@ void cmd_find(const char *search_name) {
     
     int found_count = 0;
     uint32_t current_inode;
-    char current_path[128];
+    char current_path[256];
     
     // DFS traversal
-    while (find_pop(&current_inode, current_path)) {
+    while (find_pop(&current_inode, current_path, sizeof(current_path))) {
         // Read directory entries
         struct EXT2DriverRequest req = {
             .buf = dir_buffer,
@@ -894,13 +910,23 @@ void cmd_find(const char *search_name) {
                 continue;
             }
             
-            // Build full path
-            char full_path[128];
-            strcpy(full_path, current_path);
-            if (full_path[strlen(full_path) - 1] != '/') {
-                strcat(full_path, "/");
+            // Build full path (with bounds check)
+            char full_path[256];
+            memset(full_path, 0, sizeof(full_path));
+            uint32_t path_len = strlen(current_path);
+            if (path_len < sizeof(full_path) - 64) {  // Leave room for name
+                strcpy(full_path, current_path);
+                if (full_path[path_len - 1] != '/') {
+                    full_path[path_len] = '/';
+                    path_len++;
+                }
+                // Safe copy name_buf
+                for (uint32_t j = 0; j < strlen(name_buf) && path_len + j < sizeof(full_path) - 1; j++) {
+                    full_path[path_len + j] = name_buf[j];
+                }
+            } else {
+                strcpy(full_path, "(path too long)");
             }
-            strcat(full_path, name_buf);
             
             // Check if name matches search term
             if (streq(name_buf, search_name)) {
