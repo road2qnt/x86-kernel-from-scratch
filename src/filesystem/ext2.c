@@ -306,45 +306,20 @@ static int8_t remove_entry_from_dir(uint32_t parent_inode_num, char *name_to_rem
 // ==============================================================================
 
 bool is_empty_storage(void) {
-    #ifdef FS_INSERTER
-    printf("    [ext2.c] > Masuk is_empty_storage\n");
-    #endif
-
     struct BlockBuffer boot_sector_buffer;
-    
-    #ifdef FS_INSERTER
-    printf("    [ext2.c] > Reading boot sector...\n");
-    #endif
-    
     read_blocks(&boot_sector_buffer, BOOT_SECTOR, 1);
-
-    #ifdef FS_INSERTER
-    printf("    [ext2.c] > Comparing signature...\n");
-    #endif
-    
     return memcmp(boot_sector_buffer.buf, fs_signature, BLOCK_SIZE) != 0; 
 }
 
 void create_ext2(void) {
-    // Pake static biar gak menuhin stack (Anti Stack Overflow) & otomatis nol
     static struct BlockBuffer buffer; 
 
-    #ifdef FS_INSERTER
-    printf("    [create_ext2] START. Buffer Addr: %p\n", &buffer); fflush(stdout);
-    #endif
-
-    // --- 1. Tulis Signature ---
+    // 1. Write Boot Sector Signature
     memset(buffer.buf, 0, BLOCK_SIZE);
     memcpy(buffer.buf, fs_signature, sizeof(fs_signature));
-    #ifdef FS_INSERTER
-    printf("    [create_ext2] 1. Writing Boot Sector...\n"); fflush(stdout);
-    #endif
     write_blocks(&buffer, BOOT_SECTOR, 1);
 
-    // --- 2. Superblock ---
-    #ifdef FS_INSERTER
-    printf("    [create_ext2] 2. Config Superblock...\n"); fflush(stdout);
-    #endif
+    // 2. Superblock
     memset(&_ext2_superblock_state, 0, sizeof(struct EXT2Superblock));
     _ext2_superblock_state.s_inodes_count      = TOTAL_INODES;
     _ext2_superblock_state.s_blocks_count      = TOTAL_BLOCKS;
@@ -360,15 +335,9 @@ void create_ext2(void) {
 
     memset(buffer.buf, 0, BLOCK_SIZE);
     memcpy(buffer.buf, &_ext2_superblock_state, sizeof(struct EXT2Superblock));
-    #ifdef FS_INSERTER
-    printf("    [create_ext2]    Writing Superblock...\n"); fflush(stdout);
-    #endif
     write_blocks(&buffer, SUPERBLOCK_LBA, 1);
 
-    // --- 3. BGDT ---
-    #ifdef FS_INSERTER
-    printf("    [create_ext2] 3. Config BGDT...\n"); fflush(stdout);
-    #endif
+    // 3. BGDT
     memset(&_ext2_bgdt_state, 0, sizeof(struct EXT2BlockGroupDescriptorTable));
     _ext2_bgdt_state.table[0].bg_block_bitmap      = BLOCK_BITMAP_LBA;
     _ext2_bgdt_state.table[0].bg_inode_bitmap      = INODE_BITMAP_LBA;
@@ -379,40 +348,24 @@ void create_ext2(void) {
 
     memset(buffer.buf, 0, BLOCK_SIZE);
     memcpy(buffer.buf, &_ext2_bgdt_state.table[0], sizeof(struct EXT2BlockGroupDescriptor));
-    #ifdef FS_INSERTER
-    printf("    [create_ext2]    Writing BGDT...\n"); fflush(stdout);
-    #endif
     write_blocks(&buffer, BGDT_LBA, 1);
 
-    // --- 4. Bitmaps ---
-    #ifdef FS_INSERTER
-    printf("    [create_ext2] 4. Writing Bitmaps...\n"); fflush(stdout);
-    #endif
-    
-    // Block Bitmap
+    // 4. Bitmaps
     memset(buffer.buf, 0, BLOCK_SIZE);
-    for (uint32_t i = 0; i < INITIAL_USED_BLOCKS; ++i) set_bit(buffer.buf, i);
+    for (uint32_t i = 0; i <= ROOT_DIR_BLOCK_LBA; ++i) set_bit(buffer.buf, i);
     write_blocks(&buffer, BLOCK_BITMAP_LBA, 1);
 
-    // Inode Bitmap
     memset(buffer.buf, 0, BLOCK_SIZE);
     for (uint32_t i = 1; i <= INITIAL_USED_INODES; ++i) set_bit(buffer.buf, i - 1);
     write_blocks(&buffer, INODE_BITMAP_LBA, 1);
 
-    // --- 5. Inode Table ---
-    #ifdef FS_INSERTER
-    printf("    [create_ext2] 5. Clearing Inode Table...\n"); fflush(stdout);
-    #endif
-    // Zero out Inode Table Blocks
+    // 5. Inode Table
     memset(buffer.buf, 0, BLOCK_SIZE);
     for (uint32_t i = 0; i < INODES_TABLE_BLOCK_COUNT; i++) {
         write_blocks(&buffer, INODE_TABLE_LBA + i, 1);
     }
 
-    // Setup Root Inode
-    #ifdef FS_INSERTER
-    printf("    [create_ext2] 5b. Writing Root Inode...\n"); fflush(stdout);
-    #endif
+    // Root Inode
     struct EXT2Inode root_inode;
     memset(&root_inode, 0, sizeof(struct EXT2Inode));
     root_inode.i_mode  = EXT2_S_IFDIR | 0755;
@@ -420,18 +373,12 @@ void create_ext2(void) {
     root_inode.i_links_count = 2;
     root_inode.i_blocks = BLOCK_SIZE / 512;
     root_inode.i_block[0] = ROOT_DIR_BLOCK_LBA;
-    
-    // Pake write_inode helper (pastikan helper ini aman!)
     write_inode(ROOT_INODE_NO, &root_inode);
 
-    // --- 6. Root Data Block ---
-    #ifdef FS_INSERTER
-    printf("    [create_ext2] 6. Writing Root Dir Data...\n"); fflush(stdout);
-    #endif
+    // 6. Root Directory Data Block
     memset(buffer.buf, 0, BLOCK_SIZE);
     struct EXT2DirectoryEntry *entry = (struct EXT2DirectoryEntry *)buffer.buf;
 
-    // "."
     entry->inode = ROOT_INODE_NO;
     entry->rec_len = get_entry_record_len(1);
     entry->name_len = 1;
@@ -439,8 +386,7 @@ void create_ext2(void) {
     memcpy(get_entry_name(entry), ".", 1);
     uint16_t len_dot = entry->rec_len;
 
-    // ".."
-    entry = get_next_directory_entry(entry); // Pastikan helper ini gak return NULL atau aneh
+    entry = get_next_directory_entry(entry);
     entry->inode = ROOT_INODE_NO;
     entry->name_len = 2;
     entry->file_type = EXT2_FT_DIR;
@@ -448,41 +394,19 @@ void create_ext2(void) {
     entry->rec_len = BLOCK_SIZE - len_dot;
 
     write_blocks(&buffer, ROOT_DIR_BLOCK_LBA, 1);
-
     g_filesystem_initialized = true;
-    #ifdef FS_INSERTER
-    printf("    [create_ext2] DONE SUCCESS.\n"); fflush(stdout);
-    #endif
 }
 void initialize_filesystem_ext2(void) {
-    #ifdef FS_INSERTER
-    printf("  [ext2.c] Checking storage status...\n");
-    #endif
-
     if (is_empty_storage()) {
-        #ifdef FS_INSERTER
-        printf("  [ext2.c] Storage empty. Creating new FS...\n");
-        #endif
         create_ext2();
         g_filesystem_initialized = true;
     } else {
-        #ifdef FS_INSERTER
-        printf("  [ext2.c] Storage exists. Reading Superblock...\n");
-        #endif
         read_blocks(&_ext2_superblock_state, SUPERBLOCK_LBA, 1);
-        
-        #ifdef FS_INSERTER
-        printf("  [ext2.c] Reading BGDT...\n");
-        #endif
         read_blocks(&_ext2_bgdt_state.table[0], BGDT_LBA, 1);
-
         if (_ext2_superblock_state.s_magic == EXT2_SUPER_MAGIC) {
             g_filesystem_initialized = true;
         }
     }
-    #ifdef FS_INSERTER
-    printf("  [ext2.c] Init Done.\n");
-    #endif
 }
 // ==============================================================================
 // MEMORY MANAGEMENT (ALLOCATION)
@@ -523,11 +447,27 @@ void deallocate_node(uint32_t inode) {
     struct EXT2Inode node_data;
     if (!read_inode(inode, &node_data)) return;
     
+    // Free direct blocks
     for (int i = 0; i < 12; i++) {
         if (node_data.i_block[i] != 0) {
             deallocate_single_block(node_data.i_block[i]);
             node_data.i_block[i] = 0;
         }
+    }
+    
+    // Free single indirect blocks
+    if (node_data.i_block[12] != 0) {
+        struct BlockBuffer indirect_table;
+        read_blocks(&indirect_table, node_data.i_block[12], 1);
+        uint32_t *indirect_ptrs = (uint32_t *)indirect_table.buf;
+        
+        for (uint32_t i = 0; i < (BLOCK_SIZE / sizeof(uint32_t)); i++) {
+            if (indirect_ptrs[i] != 0) {
+                deallocate_single_block(indirect_ptrs[i]);
+            }
+        }
+        deallocate_single_block(node_data.i_block[12]);
+        node_data.i_block[12] = 0;
     }
     
     memset(&node_data, 0, sizeof(struct EXT2Inode));
@@ -604,6 +544,7 @@ int8_t read(struct EXT2DriverRequest request) {
     uint8_t *out = (uint8_t *)request.buf;
     struct BlockBuffer buf;
 
+    // Read direct blocks (i_block[0-11])
     for (int i = 0; i < 12 && bytes_read < bytes_to_read; i++) {
         if (file_inode.i_block[i] == 0) break;
         
@@ -616,6 +557,27 @@ int8_t read(struct EXT2DriverRequest request) {
         
         memcpy(out + bytes_read, buf.buf, chunk);
         bytes_read += chunk;
+    }
+    
+    // Read single indirect blocks (i_block[12])
+    if (bytes_read < bytes_to_read && file_inode.i_block[12] != 0) {
+        struct BlockBuffer indirect_table;
+        read_blocks(&indirect_table, file_inode.i_block[12], 1);
+        uint32_t *indirect_ptrs = (uint32_t *)indirect_table.buf;
+        
+        for (uint32_t i = 0; i < (BLOCK_SIZE / sizeof(uint32_t)) && bytes_read < bytes_to_read; i++) {
+            if (indirect_ptrs[i] == 0) break;
+            
+            read_blocks(&buf, indirect_ptrs[i], 1);
+            
+            uint32_t chunk = BLOCK_SIZE;
+            if (bytes_to_read - bytes_read < BLOCK_SIZE) {
+                chunk = bytes_to_read - bytes_read;
+            }
+            
+            memcpy(out + bytes_read, buf.buf, chunk);
+            bytes_read += chunk;
+        }
     }
     
     return 0;
@@ -647,6 +609,7 @@ int8_t write(struct EXT2DriverRequest *request) {
         uint32_t blocks_needed = (request->buffer_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
         uint8_t *src = (uint8_t *)request->buf;
         
+        // Direct blocks (i_block[0-11])
         for (uint32_t i = 0; i < blocks_needed && i < 12; i++) {
             uint32_t blk = allocate_block(0);
             if (blk == 0) break; 
@@ -661,6 +624,37 @@ int8_t write(struct EXT2DriverRequest *request) {
             
             memcpy(data.buf, src + (i * BLOCK_SIZE), copy_sz);
             write_blocks(&data, blk, 1);
+        }
+        
+        // Single indirect block (i_block[12]) for blocks 12+
+        if (blocks_needed > 12) {
+            uint32_t indirect_blk = allocate_block(0);
+            if (indirect_blk != 0) {
+                new_inode.i_block[12] = indirect_blk;
+                new_inode.i_blocks += (BLOCK_SIZE/512);
+                
+                struct BlockBuffer indirect_table;
+                memset(indirect_table.buf, 0, BLOCK_SIZE);
+                uint32_t *indirect_ptrs = (uint32_t *)indirect_table.buf;
+                
+                for (uint32_t i = 12; i < blocks_needed && (i - 12) < (BLOCK_SIZE / sizeof(uint32_t)); i++) {
+                    uint32_t blk = allocate_block(0);
+                    if (blk == 0) break;
+                    
+                    indirect_ptrs[i - 12] = blk;
+                    new_inode.i_blocks += (BLOCK_SIZE/512);
+                    
+                    struct BlockBuffer data;
+                    memset(data.buf, 0, BLOCK_SIZE);
+                    uint32_t copy_sz = (i == blocks_needed - 1) ? (request->buffer_size % BLOCK_SIZE) : BLOCK_SIZE;
+                    if (copy_sz == 0) copy_sz = BLOCK_SIZE;
+                    
+                    memcpy(data.buf, src + (i * BLOCK_SIZE), copy_sz);
+                    write_blocks(&data, blk, 1);
+                }
+                // Write the indirect block table
+                write_blocks(&indirect_table, indirect_blk, 1);
+            }
         }
     }
     else if (request->is_directory) {
@@ -755,4 +749,23 @@ int8_t delete(struct EXT2DriverRequest request) {
     deallocate_node(target_inode_num);
 
     return 0; 
+}
+
+// stat - Get file/directory information
+// Returns: 0=success, 1=not found, -1=error
+// On success, *size_out contains file size
+int8_t stat(const char *name, uint8_t name_len, uint32_t parent_inode, uint32_t *size_out, bool *is_dir_out) {
+    if (!g_filesystem_initialized) return -1;
+    if (parent_inode == 0 || name == NULL || name_len == 0) return -1;
+    
+    uint32_t inode_num = find_entry_in_dir(parent_inode, name, name_len);
+    if (inode_num == 0) return 1;  // Not found
+    
+    struct EXT2Inode inode;
+    if (!read_inode(inode_num, &inode)) return -1;
+    
+    if (size_out) *size_out = inode.i_size;
+    if (is_dir_out) *is_dir_out = (inode.i_mode & EXT2_S_IFDIR) != 0;
+    
+    return 0;
 }
