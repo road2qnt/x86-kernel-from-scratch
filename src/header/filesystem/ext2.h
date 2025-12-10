@@ -32,7 +32,7 @@
 #define TOTAL_BLOCKS (BLOCKS_PER_GROUP * GROUPS_COUNT) 
 #define TOTAL_INODES (INODES_PER_GROUP * GROUPS_COUNT) 
 // Hitungan untuk Group 0
-#define INITIAL_USED_BLOCKS_IN_GROUP0 (1 + 1 + 1 + 1 + INODES_TABLE_BLOCK_COUNT + 1) // SB(di LBA1), BGDT(di LBA2), BBmap, IBmap, ITbl, RootData
+#define INITIAL_USED_BLOCKS_IN_GROUP0 (1 + 1 + 1 + 1 + 1 + INODES_TABLE_BLOCK_COUNT + 1) // Boot(LBA0), SB(LBA1), BGDT(LBA2), BBmap, IBmap, ITbl, RootData = 22
 #define INITIAL_USED_INODES_IN_GROUP0 EXT2_GOOD_OLD_FIRST_INO // Inode 1-11 kepake (termasuk root #2)
 // Total (jika cuma 1 group)
 #define INITIAL_USED_BLOCKS INITIAL_USED_BLOCKS_IN_GROUP0
@@ -364,6 +364,17 @@ int8_t write(struct EXT2DriverRequest *request);
  * @return Error code: 0 success - 1 not found - 2 folder is not empty - 3 parent folder invalid -1 unknown
  */
 int8_t delete(struct EXT2DriverRequest request);
+
+/**
+ * Get file/directory information (size, type)
+ * @param name File/directory name
+ * @param name_len Length of name
+ * @param parent_inode Parent directory inode
+ * @param size_out Output: file size (can be NULL)
+ * @param is_dir_out Output: true if directory (can be NULL)
+ * @return 0 on success, 1 if not found, -1 on error
+ */
+int8_t stat(const char *name, uint8_t name_len, uint32_t parent_inode, uint32_t *size_out, bool *is_dir_out);
 
 /* =============================== MEMORY ==========================================*/
 
