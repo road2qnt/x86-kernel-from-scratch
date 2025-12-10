@@ -1,5 +1,6 @@
 #include "header/cpu/interrupt.h"
 #include "header/cpu/portio.h"
+#include "header/cpu/gdt.h"
 #include "header/driver/framebuffer.h"
 #include "header/driver/keyboard.h"
 #include "header/stdlib/string.h"
@@ -10,6 +11,10 @@ static void syscall_handler(struct CPURegister *regs);
 // --- TAMBAHKAN INI DI ATAS (Global Cursor State untuk Syscall) ---
 static uint8_t sys_row = 0;
 static uint8_t sys_col = 0;
+
+// External ISR stub table
+extern void *isr_stub_table[];
+
 // ----------------------------------------------------------------
 
 void io_wait(void) {
@@ -103,11 +108,47 @@ static void syscall_handler(struct CPURegister *regs) {
         case SYSCALL_PUTCHAR:
             // putchar(char c, uint8_t color)
             // EBX = char, ECX = color
-            framebuffer_write(sys_row, sys_col, (char)regs->general.ebx, (uint8_t)regs->general.ecx, 0);
-            sys_col++;
-            if (sys_col >= 80) { sys_col = 0; sys_row++; }
-            if (sys_row >= 25) sys_row = 0;
-            framebuffer_set_cursor(sys_row, sys_col);
+            {
+                char c = (char)regs->general.ebx;
+                uint8_t color = (uint8_t)regs->general.ecx;
+                
+                if (c == '\b') {
+                    // Backspace: move cursor back and clear character
+                    if (sys_col > 0) {
+                        sys_col--;
+                    } else if (sys_row > 0) {
+                        sys_row--;
+                        sys_col = 79;
+                    }
+                    framebuffer_write(sys_row, sys_col, ' ', color, 0);
+                } else if (c == '\n') {
+                    sys_col = 0;
+                    sys_row++;
+                } else {
+                    framebuffer_write(sys_row, sys_col, c, color, 0);
+                    sys_col++;
+                    if (sys_col >= 80) { sys_col = 0; sys_row++; }
+                }
+                
+                // Scroll if needed
+                if (sys_row >= 25) {
+                    // Scroll up: move all lines up by 1
+                    for (uint8_t row = 0; row < 24; row++) {
+                        for (uint8_t col = 0; col < 80; col++) {
+                            uint16_t src_idx = (row + 1) * 80 + col;
+                            uint16_t dst_idx = row * 80 + col;
+                            volatile uint16_t *fb = (volatile uint16_t *)0xC00B8000;
+                            fb[dst_idx] = fb[src_idx];
+                        }
+                    }
+                    // Clear last line
+                    for (uint8_t col = 0; col < 80; col++) {
+                        framebuffer_write(24, col, ' ', 0x07, 0);
+                    }
+                    sys_row = 24;
+                }
+                framebuffer_set_cursor(sys_row, sys_col);
+            }
             break;
 
         case SYSCALL_PUTS:
@@ -118,16 +159,40 @@ static void syscall_handler(struct CPURegister *regs) {
                 uint32_t len = regs->general.ecx;
                 uint8_t color = (uint8_t)regs->general.edx;
                 for (uint32_t i = 0; i < len; i++) {
-                    // Handle newline
-                    if (str[i] == '\n') {
+                    char c = str[i];
+                    if (c == '\b') {
+                        // Backspace
+                        if (sys_col > 0) {
+                            sys_col--;
+                        } else if (sys_row > 0) {
+                            sys_row--;
+                            sys_col = 79;
+                        }
+                        framebuffer_write(sys_row, sys_col, ' ', color, 0);
+                    } else if (c == '\n') {
                         sys_col = 0;
                         sys_row++;
                     } else {
-                        framebuffer_write(sys_row, sys_col, str[i], color, 0);
+                        framebuffer_write(sys_row, sys_col, c, color, 0);
                         sys_col++;
                         if (sys_col >= 80) { sys_col = 0; sys_row++; }
                     }
-                    if (sys_row >= 25) sys_row = 0; 
+                    
+                    // Scroll if needed
+                    if (sys_row >= 25) {
+                        for (uint8_t row = 0; row < 24; row++) {
+                            for (uint8_t col = 0; col < 80; col++) {
+                                uint16_t src_idx = (row + 1) * 80 + col;
+                                uint16_t dst_idx = row * 80 + col;
+                                volatile uint16_t *fb = (volatile uint16_t *)0xC00B8000;
+                                fb[dst_idx] = fb[src_idx];
+                            }
+                        }
+                        for (uint8_t col = 0; col < 80; col++) {
+                            framebuffer_write(24, col, ' ', 0x07, 0);
+                        }
+                        sys_row = 24;
+                    }
                 }
                 framebuffer_set_cursor(sys_row, sys_col);
             }
@@ -135,6 +200,29 @@ static void syscall_handler(struct CPURegister *regs) {
 
         case SYSCALL_ACTIVATE_KBD:
             keyboard_state_activate();
+            break;
+
+        case SYSCALL_STAT:
+            // stat(name, name_len, parent_inode, size_out, is_dir_out)
+            // EBX = pointer to struct {name, name_len, parent_inode}
+            // ECX = pointer to size_out (uint32_t*)
+            // EDX = pointer to is_dir_out (bool*)
+            // Return: EAX = return code
+            {
+                struct __attribute__((packed)) {
+                    char *name;
+                    uint8_t name_len;
+                    uint32_t parent_inode;
+                } *stat_req = (void*)regs->general.ebx;
+                
+                regs->general.eax = (uint32_t)stat(
+                    stat_req->name,
+                    stat_req->name_len,
+                    stat_req->parent_inode,
+                    (uint32_t*)regs->general.ecx,
+                    (bool*)regs->general.edx
+                );
+            }
             break;
 
         default:
@@ -149,3 +237,16 @@ void activate_keyboard_interrupt(void) {
 void activate_timer_interrupt(void) {
     out(PIC1_DATA, in(PIC1_DATA) & ~(1 << IRQ_TIMER));
 }
+
+struct TSSEntry _interrupt_tss_entry = {
+    .ss0 = GDT_KERNEL_DATA_SEGMENT_SELECTOR,
+};
+
+void set_tss_kernel_current_stack(void) {
+    uint32_t stack_ptr;
+    // Reading base stack frame instead esp
+    __asm__ volatile ("mov %%ebp, %0": "=r"(stack_ptr) : /* <Empty> */);
+    // Add 8 because 4 for ret address and other 4 is for stack_ptr variable
+    _interrupt_tss_entry.esp0 = stack_ptr + 8;
+}
+   

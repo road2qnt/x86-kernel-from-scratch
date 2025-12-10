@@ -48,6 +48,14 @@ bool paging_allocate_check(uint32_t amount) {
 }
 
 bool paging_allocate_user_page_frame(struct PageDirectory *page_dir, void *virtual_addr) {
+    // 0. Hitung page index terlebih dahulu untuk cek double allocation
+    uint32_t page_index = ((uint32_t) virtual_addr >> 22) & 0x3FF;
+    
+    // Cek apakah virtual address sudah ter-mapping (prevent double allocation)
+    if (page_dir->table[page_index].present_bit) {
+        return false; // Virtual address sudah ter-allocate
+    }
+
     // 1. Cari frame fisik yang kosong di bitmap manager
     // Mulai dari 1 karena frame 0 (0-4MB) reserved buat Kernel
     uint32_t physical_frame_idx = 0;
@@ -73,9 +81,6 @@ bool paging_allocate_user_page_frame(struct PageDirectory *page_dir, void *virtu
     void *physical_addr = (void*)(physical_frame_idx * PAGE_FRAME_SIZE);
 
     // 4. Update Page Directory dengan mapping baru
-    uint32_t page_index = ((uint32_t) virtual_addr >> 22) & 0x3FF;
-    
-    // Buat entry baru. Inisialisasi dengan {0} akan men-zero-out semua field.
     struct PageDirectoryEntry new_entry = {0}; 
     new_entry.present_bit       = 1;
     new_entry.write_bit         = 1;
@@ -102,6 +107,16 @@ bool paging_free_user_page_frame(struct PageDirectory *page_dir, void *virtual_a
 
     // Dapatkan index frame fisik dari entry tersebut
     uint32_t physical_frame_idx = page_dir->table[page_index].lower_address;
+
+    // Validasi: Cek bounds frame index
+    if (physical_frame_idx >= PAGE_FRAME_MAX_COUNT) {
+        return false; // Invalid frame index (out of bounds)
+    }
+    
+    // Validasi: Jangan free kernel reserved frame (frame 0)
+    if (physical_frame_idx == 0) {
+        return false; // Cannot free kernel reserved frame
+    }
 
     // Tandai frame fisik sebagai bebas di manager
     if (page_manager_state.page_frame_map[physical_frame_idx]) {

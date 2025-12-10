@@ -73,8 +73,6 @@ struct PageManagerState {
 } __attribute__((packed));
 
 
-
-
 /**
  * Invalidate page that contain virtual address in parameter
  * * @param virtual_addr Virtual address to flush

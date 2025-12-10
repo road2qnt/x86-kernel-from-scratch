@@ -1,134 +1,175 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/types.h>
 
-// Include header OS
-#include "../header/filesystem/ext2.h"
-#include "../header/driver/disk.h"
+#include "header/filesystem/ext2.h"
+#include "header/driver/disk.h"
 
-#ifndef BLOCK_SIZE
-#define BLOCK_SIZE 512
-#endif
+// Global variable
+uint8_t *image_storage;
+uint8_t *file_buffer;
+uint8_t *read_buffer;
 
-#define STORAGE_SIZE (4 * 1024 * 1024)
-
-uint8_t *image_storage = NULL;
-// Kita definisikan ulang variabel ini khusus untuk konteks Inserter
-// agar tidak konflik linking dengan ext2.c
-bool g_filesystem_initialized_inserter = false;
-
-// Override fungsi extern dari ext2.c jika diperlukan, 
-// tapi biasanya ext2.c pakai variabel statis atau extern yang sama.
-// Kita biarkan ext2.c mengelola g_filesystem_initialized-nya sendiri.
-
-// --- MOCKING DRIVER ---
-void read_blocks(void *ptr, uint32_t lba, uint8_t count) {
-    if (!image_storage) { 
-        fprintf(stderr, "[CRASH] Image storage NULL at Read LBA %u\n", lba); 
-        exit(1); 
+void read_blocks(void *ptr, uint32_t logical_block_address, uint8_t block_count) {
+    for (int i = 0; i < block_count; i++) {
+        memcpy(
+            (uint8_t*) ptr + BLOCK_SIZE*i, 
+            image_storage + BLOCK_SIZE*(logical_block_address+i), 
+            BLOCK_SIZE
+        );
     }
-    uint32_t offset = lba * BLOCK_SIZE;
-    uint32_t size   = count * BLOCK_SIZE;
-    if (offset + size > STORAGE_SIZE) {
-        fprintf(stderr, "[CRASH] Read Out of Bounds! LBA: %u\n", lba);
-        exit(1);
-    }
-    memcpy(ptr, image_storage + offset, size);
 }
 
-void write_blocks(const void *ptr, uint32_t lba, uint8_t count) {
-    if (!image_storage) { 
-        fprintf(stderr, "[CRASH] Image storage NULL at Write LBA %u\n", lba); 
-        exit(1); 
+void write_blocks(const void *ptr, uint32_t logical_block_address, uint8_t block_count) {
+    for (int i = 0; i < block_count; i++) {
+        memcpy(
+            image_storage + BLOCK_SIZE*(logical_block_address+i), 
+            (uint8_t*) ptr + BLOCK_SIZE*i, 
+            BLOCK_SIZE
+        );
     }
-    uint32_t offset = lba * BLOCK_SIZE;
-    uint32_t size   = count * BLOCK_SIZE;
-    if (offset + size > STORAGE_SIZE) {
-        fprintf(stderr, "[CRASH] Write Out of Bounds! LBA: %u\n", lba);
-        exit(1);
-    }
-    memcpy(image_storage + offset, ptr, size);
 }
-// ---------------------------
+
+// Helper: get filename length
+static uint8_t get_filename_length(const char *name) {
+    uint8_t len = 0;
+    while (name[len] && len < 255) len++;
+    return len;
+}
 
 int main(int argc, char *argv[]) {
     if (argc < 4) {
-        fprintf(stderr, "Usage: %s <src> <tgt> <inode> <disk>\n", argv[0]);
+        fprintf(stderr, "Usage: ./inserter <file_to_insert> <filename_in_fs> <parent_inode> <storage.bin>\n");
+        fprintf(stderr, "Example: ./inserter bin/shell shell 2 bin/storage.bin\n");
         exit(1);
     }
 
-    char *source_path = argv[1];
-    char *target_name = argv[2];
-    int parent_inode = atoi(argv[3]);
-    char *storage_path = argv[4];
+    char *src_file = argv[1];      // File source di host (e.g., bin/shell)
+    char *dest_name = argv[2];     // Nama file di filesystem (e.g., "shell")
+    uint32_t parent_inode = 2;     // Default root
+    char *storage_file = argv[4];  // Storage file
 
-    printf("[DEBUG] 1. Opening Storage: %s\n", storage_path);
-    FILE *fptr = fopen(storage_path, "rb+");
-    if (!fptr) {
-        fptr = fopen(storage_path, "wb+");
-        ftruncate(fileno(fptr), STORAGE_SIZE);
+    if (argc >= 4) {
+        sscanf(argv[3], "%u", &parent_inode);
     }
-    
-    printf("[DEBUG] 2. Allocating RAM (%d bytes)\n", STORAGE_SIZE);
-    image_storage = calloc(1, STORAGE_SIZE);
-    if (!image_storage) return 1;
-
-    printf("[DEBUG] 3. Reading Disk to RAM\n");
-    fseek(fptr, 0, SEEK_SET);
-    fread(image_storage, 1, STORAGE_SIZE, fptr);
-
-    printf("[DEBUG] 4. Initializing Filesystem...\n");
-    // Panggil fungsi init dari ext2.c
-    initialize_filesystem_ext2();
-    
-    // HACK: Paksa variabel global di ext2.c jadi true
-    // Kita perlu cara mengakses variabel 'g_filesystem_initialized' di ext2.c
-    // Karena di C variabel global dishare, kita bisa set langsung jika extern.
-    extern bool g_filesystem_initialized;
-    g_filesystem_initialized = true;
-    printf("[DEBUG] 5. Filesystem Initialized.\n");
-
-    printf("[DEBUG] 6. Reading Source File: %s\n", source_path);
-    FILE *fsrc = fopen(source_path, "rb");
-    if (!fsrc) { perror("Src not found"); return 1; }
-    fseek(fsrc, 0, SEEK_END);
-    size_t fsize = ftell(fsrc);
-    fseek(fsrc, 0, SEEK_SET);
-    
-    uint8_t *buf = malloc(fsize);
-    fread(buf, 1, fsize, fsrc);
-    fclose(fsrc);
-
-    printf("[DEBUG] 7. Preparing Write Request (Size: %lu)\n", fsize);
-    struct EXT2DriverRequest req;
-    memset(&req, 0, sizeof(req));
-    req.parent_inode = parent_inode;
-    req.name = target_name;
-    req.name_len = strlen(target_name);
-    req.is_directory = false;
-    req.buffer_size = fsize;
-    req.buf = buf;
-
-    printf("[DEBUG] 8. Executing write()...\n");
-    int8_t ret = write(&req);
-    
-    if (ret == 1) {
-        printf("[DEBUG] File exists, overwriting...\n");
-        delete(req);
-        ret = write(&req);
-    }
-
-    if (ret == 0) {
-        printf("[DEBUG] 9. Success! Saving to Disk...\n");
-        fseek(fptr, 0, SEEK_SET);
-        fwrite(image_storage, 1, STORAGE_SIZE, fptr);
+    if (argc >= 5) {
+        storage_file = argv[4];
     } else {
-        printf("[DEBUG] FAILED. Error code: %d\n", ret);
+        storage_file = argv[3]; // Backward compatibility
+        parent_inode = 2;
+        if (argc == 4) {
+            sscanf(argv[2], "%u", &parent_inode);
+            dest_name = argv[1];
+            // Extract filename from path
+            char *last_slash = strrchr(argv[1], '/');
+            if (last_slash) dest_name = last_slash + 1;
+        }
     }
 
+    // Allocate memory
+    image_storage = malloc(4*1024*1024);
+    file_buffer   = malloc(4*1024*1024);
+    read_buffer   = malloc(4*1024*1024);
+    
+    if (!image_storage || !file_buffer || !read_buffer) {
+        fprintf(stderr, "Error: Failed to allocate memory\n");
+        exit(1);
+    }
+
+    // Read storage into memory
+    FILE *fptr = fopen(storage_file, "rb");
+    if (!fptr) {
+        fprintf(stderr, "Error: Cannot open storage file '%s'\n", storage_file);
+        exit(1);
+    }
+    fread(image_storage, 4*1024*1024, 1, fptr);
     fclose(fptr);
+
+    // Read target file
+    FILE *fptr_target = fopen(src_file, "rb");
+    size_t filesize = 0;
+    if (fptr_target == NULL) {
+        fprintf(stderr, "Error: Cannot open source file '%s'\n", src_file);
+        exit(1);
+    }
+    fseek(fptr_target, 0, SEEK_END);
+    filesize = ftell(fptr_target);
+    fseek(fptr_target, 0, SEEK_SET);
+    fread(file_buffer, filesize, 1, fptr_target);
+    fclose(fptr_target);
+
+    printf("Source file    : %s\n", src_file);
+    printf("Dest filename  : %s\n", dest_name);
+    printf("Parent inode   : %u\n", parent_inode);
+    printf("Filesize       : %zu bytes\n", filesize);
+
+    // Initialize EXT2
+    initialize_filesystem_ext2();
+
+    // Setup request
+    uint8_t filename_length = get_filename_length(dest_name);
+    
+    struct EXT2DriverRequest request = {
+        .buf = file_buffer,
+        .buffer_size = filesize,
+        .name = dest_name,
+        .name_len = filename_length,
+        .parent_inode = parent_inode,
+        .is_directory = false
+    };
+
+    // Try to write
+    int8_t retcode = write(&request);
+    
+    if (retcode == 1) {
+        // File exists, try to delete and rewrite
+        printf("File exists, replacing...\n");
+        struct EXT2DriverRequest del_req = request;
+        delete(del_req);
+        retcode = write(&request);
+    }
+    
+    if (retcode == 0) {
+        printf("Write success!\n");
+        
+        // Verify by reading back
+        memset(read_buffer, 0, 4*1024*1024);
+        struct EXT2DriverRequest verify_req = request;
+        verify_req.buf = read_buffer;
+        int8_t read_ret = read(verify_req);
+        if (read_ret == 0) {
+            bool verified = true;
+            for (size_t i = 0; i < filesize; i++) {
+                if (read_buffer[i] != file_buffer[i]) {
+                    verified = false;
+                    break;
+                }
+            }
+            printf("Verification: %s\n", verified ? "OK" : "FAILED");
+        }
+    } else if (retcode == 1) {
+        printf("Error: File/folder name already exist\n");
+    } else if (retcode == 2) {
+        printf("Error: Invalid parent inode\n");
+    } else {
+        printf("Error: Unknown error (code %d)\n", retcode);
+    }
+
+    // Write image back to storage
+    fptr = fopen(storage_file, "wb");
+    if (!fptr) {
+        fprintf(stderr, "Error: Cannot write to storage file\n");
+        exit(1);
+    }
+    fwrite(image_storage, 4*1024*1024, 1, fptr);
+    fclose(fptr);
+
+    // Cleanup
+    free(image_storage);
+    free(file_buffer);
+    free(read_buffer);
+
     return 0;
 }

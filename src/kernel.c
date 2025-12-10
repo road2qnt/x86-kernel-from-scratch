@@ -84,7 +84,7 @@ void kernel_setup(void) {
     
     framebuffer_write(0, 1, 'P', GREEN, BLACK); // P = Paging Switched
 
-// ===============================================================
+    // ===============================================================
     // FASE 4: PREPARE USER SPACE & LOADER
     // ===============================================================
     framebuffer_write(0, 2, 'R', GREEN, BLACK); // R = Ready
@@ -115,7 +115,7 @@ void kernel_setup(void) {
     req.name = "shell";               // Nama file yang di-insert
     req.name_len = 5;
     req.buf = (void*)0x400000;        // <<< TARGET LOAD ADDRESS (Virtual)
-    req.buffer_size = 4096;           // Baca 1 halaman dulu (cukup buat shell kecil)
+    req.buffer_size = 0x100000;       // 1MB buffer (shell bisa besar karena banyak command)
     req.is_directory = false;         // Wajib set ini
     
     int8_t ret = read(req);           // Baca file
