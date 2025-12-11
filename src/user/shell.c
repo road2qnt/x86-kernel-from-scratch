@@ -1101,91 +1101,6 @@ void cmd_echo(const char *text, const char *filename) {
     }
 }
 
-// wc - Word/line/char count
-void cmd_wc(const char *flags) {
-    uint32_t lines = 0;
-    uint32_t words = 0;
-    uint32_t chars = 0;
-    bool in_word = false;
-    
-    if (pipe_mode_input) {
-        // Count from pipe buffer
-        for (uint32_t i = 0; i < pipe_input_len; i++) {
-            char c = pipe_input_buffer[i];
-            chars++;
-            
-            if (c == '\n') {
-                lines++;
-                in_word = false;
-            } else if (c == ' ' || c == '\t') {
-                in_word = false;
-            } else {
-                if (!in_word) {
-                    words++;
-                    in_word = true;
-                }
-            }
-        }
-    } else {
-        puts("wc: No pipe input (use with |)\n", RED);
-        return;
-    }
-    
-    // Output based on flags (default: all)
-    bool show_lines = (flags[0] == 0 || flags[0] == 'l');
-    bool show_words = (flags[0] == 0 || flags[0] == 'w');
-    bool show_chars = (flags[0] == 0 || flags[0] == 'c');
-    
-    if (show_lines) {
-        print_int(lines, WHITE);
-        puts(" ", WHITE);
-    }
-    if (show_words) {
-        print_int(words, WHITE);
-        puts(" ", WHITE);
-    }
-    if (show_chars) {
-        print_int(chars, WHITE);
-    }
-    puts("\n", WHITE);
-}
-
-// testuser - Test usermode by trying privileged instructions
-void cmd_testuser(void) {
-    puts("========================================\n", CYAN);
-    puts("       USER MODE (Ring 3) TEST\n", CYAN);
-    puts("========================================\n", CYAN);
-    puts("\n", WHITE);
-    puts("This test will try to execute CLI instruction.\n", WHITE);
-    puts("CLI is a PRIVILEGED instruction (Ring 0 only).\n", WHITE);
-    puts("\n", WHITE);
-    puts("Expected behavior:\n", YELLOW);
-    puts("  Ring 0 (Kernel): CLI succeeds, message appears\n", WHITE);
-    puts("  Ring 3 (User):   CPU raises GPF, system FREEZES\n", WHITE);
-    puts("\n", WHITE);
-    puts("If system FREEZES after keypress = WE ARE IN USER MODE!\n", GREEN);
-    puts("(This is CORRECT behavior - proves Ring 3)\n", GREEN);
-    puts("\n", WHITE);
-    puts("Press any key to execute CLI...\n", RED);
-    
-    // Wait for keypress
-    char c = 0;
-    while (c == 0) {
-        c = getchar();
-    }
-    
-    puts("Executing CLI...\n", YELLOW);
-    
-    // Try to execute CLI - this is a privileged instruction
-    // In Ring 3 (user mode), this will cause a General Protection Fault (#GP)
-    __asm__ volatile("cli");
-    
-    // If we get here, we're NOT in user mode (which would be bad!)
-    puts("\n", WHITE);
-    puts("!!! WARNING: CLI SUCCEEDED !!!\n", RED);
-    puts("This means we are NOT in user mode!\n", RED);
-    puts("Shell should be running in Ring 3.\n", RED);
-}
 
 // quit - Exit shell (halt CPU)
 void cmd_quit(void) {
@@ -1213,13 +1128,9 @@ void cmd_help(void) {
     puts("  echo <txt> <f>  - Create file with text\n", WHITE);
     puts("  find <name>     - Search filesystem (DFS graph)\n", WHITE);
     puts("  grep <p> [file] - Search pattern in file/pipe\n", WHITE);
-    puts("  wc              - Count lines/words/chars\n", WHITE);
     puts("  clear           - Clear screen\n", WHITE);
-    puts("  pwd             - Print working directory\n", WHITE);
     puts("  exit/quit       - Exit shell\n", WHITE);
     puts("  help            - Show this help\n", WHITE);
-    puts("\nPipeline: cmd1 | cmd2 | cmd3\n", YELLOW);
-    puts("Example: ls | grep test\n", YELLOW);
 }
 
 // MAIN SHELL LOOP
