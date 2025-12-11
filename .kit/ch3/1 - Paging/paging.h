@@ -29,7 +29,7 @@ extern struct PageDirectory _paging_kernel_page_directory;
 struct PageDirectoryEntryFlag {
     uint8_t present_bit        : 1;
     // TODO : Continue. Note: Only 8-bit flags
-} __attribute__((packed));
+} __attribute__((packed));  
 
 /**
  * Page Directory Entry, for page size 4 MB.
