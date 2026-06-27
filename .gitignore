@@ -1,3 +1,6 @@
 .kit/
 .vscode/
 *.o
+.obsidian/
+*.pdf
+doc/

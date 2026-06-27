@@ -1,141 +1,71 @@
-# Rendang OS - IF2130 Sistem Operasi 2025/2026
+# x86-kernel-from-scratch
 
-![Mascot Rendang OS](https://github.com/labsister23/tugas-besar-os-rendangos/blob/main/mascot.jpg?raw=true)
+> A 32-bit x86 operating system kernel built from scratch — bootloader, memory paging, EXT2 filesystem, preemptive multitasking, and user-mode process execution.
 
-> *"Sistem Operasi dengan Cita Rasa Bumbu Rempah Teknologi"*
-
-## Pendahuluan
-
-**Rendang OS** adalah sistem operasi 32-bit *freestanding* di arsitektur x86 berbasis *protected mode*. Proyek ini dibuat dari nol (*bare metal*) sebagai Tugas Besar IF2130 Sistem Operasi – Institut Teknologi Bandung.
-
-Kernel dirancang modular untuk mendukung manajemen memori, interrupt, EXT2 file system, hingga multitasking dengan *preemptive scheduler*.
+**4,000+ lines of C and x86 Assembly** | **Bare-metal, no external kernel code**
 
 ---
 
-## Daftar Isi
+## Overview
 
-1. [Prerequisites & Toolchain](#prerequisites--toolchain)  
-2. [Cara Kompilasi & Menjalankan](#cara-kompilasi--menjalankan)  
-3. [Arsitektur & Fitur](#arsitektur--fitur)  
-4. [Maskot Kelompok](#maskot-kelompok)  
-5. [Anggota Kelompok](#anggota-kelompok)
+`x86-kernel-from-scratch` is a from-scratch implementation of a 32-bit protected-mode operating system kernel targeting the x86 architecture. Designed as a monolith with modular subsystems, it covers the full boot-to-shell lifecycle: hardware initialization, memory management, process scheduling, filesystem operations, and user-mode execution.
 
----
+The project deliberately avoids existing kernel code, Linux, or BSD derivatives — every line is purpose-built to understand OS internals at the hardware level.
 
-## Prerequisites & Toolchain
+## Architecture
 
-Pastikan lingkungan Linux/WSL2 memiliki tools berikut:
-
-- **Compiler:** `gcc`  
-- **Assembler:** `nasm`  
-- **Linker:** `ld`  
-- **Emulator:** `qemu-system-i386`  
-- **Build Tool:** `make`  
-- **ISO Tool:** `genisoimage`  
-- **Debugger:** `gdb`  
-
-**Instalasi pada Ubuntu/WSL2:**
-
-```bash
-sudo apt update
-sudo apt install -y nasm gcc qemu-system-x86 make genisoimage gdb
+```
+Boot (Multiboot)
+  └─ Protected Mode Setup (GDT, IDT, TSS)
+       └─ Memory Management (Paging, Page Frame Allocator)
+            └─ Device Drivers (Keyboard, Framebuffer, ATA PIO)
+                 └─ Filesystem (EXT2 — block-level CRUD)
+                      └─ Process Management (Round-Robin Scheduler, PCB)
+                           └─ User Mode (Ring 3) — Shell & CLI
 ```
 
----
+## Key Features
 
-## Cara Kompilasi & Menjalankan
+| Component | Implementation |
+|-----------|---------------|
+| **Boot** | Multiboot-compliant, 32-bit Protected Mode, GDT with code/data segments |
+| **Interrupts** | IDT setup, IRQ handling, PIT for timer ticks, keyboard ISR |
+| **Memory** | Higher-half kernel mapping, paging (4KB pages), page frame allocator bitmap |
+| **Drivers** | PS/2 keyboard driver, 80×25 VGA text framebuffer, ATA PIO (LBA28) disk driver |
+| **Filesystem** | EXT2 implementation: superblock, block group descriptors, inode traversal, directory entry navigation, read/write/create/delete |
+| **Scheduler** | Preemptive Round-Robin with fixed time slices, Process Control Blocks (PCB), process states |
+| **User Mode** | Ring 3 transition via TSS, syscall interface (`int 0x80`), separate user stacks |
+| **Shell** | Interactive CLI with `ls`, `cd`, `mkdir`, `cp`, `rm`, `ps`, `kill`, `cat`, `clear` |
 
-### 1. Build Kernel & ISO
+## Build & Run
 
-```bash
-make build
-# atau
-make iso
-# atau
-make all
-```
-
-### 2. Menjalankan OS (QEMU)
-
-```bash
-make run
-```
-
-### 3. Membersihkan Build
+**Requirements:** Linux, `gcc`, `nasm`, `ld`, `qemu-system-i386`, `make`, `genisoimage`
 
 ```bash
-make clean
+make clean  && make
+make run    # launches in QEMU
 ```
 
----
+## Project Structure
 
-## Implementasi Fitur RendangOS
+```
+src/
+├── cpu/          # GDT, IDT, interrupts, port I/O
+├── driver/       # Keyboard, framebuffer, disk (ATA PIO)
+├── filesystem/   # EXT2 implementation
+├── memory/       # Paging, page frame allocator
+├── process/      # PCB, scheduling
+├── stdlib/       # String utilities, memory ops
+├── user/         # Shell, crt0, user-mode entry
+└── kernel.c      # Kernel entry point
+```
 
-### 1. Kernel & Booting (Chapter 0)
+## Why This Matters
 
-- **Multiboot compliant (GRUB Legacy)**
-- **Protected Mode 32-bit**
-- **GDT (Global Descriptor Table)**
+Building a kernel from scratch requires deep understanding of:
+- Hardware-software interface (x86 instruction set, interrupt controller, DMA)
+- Memory hierarchy and protection mechanisms (rings, paging, segmentation)
+- Concurrency primitives and scheduling theory
+- Block-level filesystem design and disk I/O
 
-### 2. Interrupt & Driver (Chapter 1)
-
-- **IDT (Interrupt Descriptor Table)**
-- **PIC Remapping**
-- **Keyboard Driver (IRQ1)**
-- **Framebuffer Driver (80x25 text mode)**
-
-### 3. File System (Chapter 2)
-
-- **Driver ATA PIO (LBA)**
-- **EXT2 – versi disederhanakan untuk IF2130**
-- **Operasi CRUD lengkap (file & directory)**
-
-### 4. Memory Management & Paging (Chapter 3)
-
-- **Paging**
-- **Higher Half Kernel (`0xC0000000` ke atas)**
-- **Page Frame Allocator**
-
-### 5. Shell (CLI)
-
-Perintah bawaan:
-
-| Perintah | Deskripsi |
-| :------- | :-------- |
-| `cd <dir>` | Berpindah direktori |
-| `ls` | Menampilkan isi direktori |
-| `mkdir <name>` | Membuat direktori baru |
-| `cat <file>` | Menampilkan isi file |
-| `cp <src> <dst>` | Menyalin file |
-| `rm <name>` | Menghapus file/direktori |
-| `mv <src> <dst>` | Memindahkan/rename file |
-| `echo <txt> <file>` | Membuat file dengan teks |
-| `find <name>` | Mencari file di filesystem (DFS) |
-| `grep <pattern> [file]` | Mencari pattern dalam file/pipe |
-| `clear` | Membersihkan layar |
-| `exit` / `quit` | Keluar dari shell |
-| `help` | Menampilkan bantuan |
-
----
-
-## Maskot Kelompok
-
-**“Koki Rendang ( Kamisato Ayaka )”**
-
-Maskot berupa koki anime yang menikmati rendang — melambangkan filosofi pembuatan OS: diracik dengan rempah kode yang kompleks, dimasak lama (debugging), hingga menghasilkan kernel yang lezat dan tahan lama.
-
-
----
-
-## Anggota Kelompok
-
-| NIM | Nama | Kontribusi |
-| :---: | :--- | :--- |
-| 13524115 | Ega Luthfi Rais | Chapter 0, 1, 2, dan 3 |
-| 13524120 | Jonathan Alverado Bangun | Chapter 4 |
-| 13524126 | Ramadhian Nabil | Mascot dan README |
-| 13524146 | Leonardus Brain | Chapter 2 dan 3 |
-
----
-
-*IF2130 Sistem Operasi – Teknik Informatika ITB*
+These are the same fundamentals that underpin backend infrastructure at scale — from OS-level virtualization to storage engines.
