@@ -69,3 +69,50 @@ Building a kernel from scratch requires deep understanding of:
 - Block-level filesystem design and disk I/O
 
 These are the same fundamentals that underpin backend infrastructure at scale — from OS-level virtualization to storage engines.
+
+---
+
+## Screenshots
+
+### Kernel Booting in QEMU
+
+<!-- TODO: Add screenshot of kernel booting in QEMU with shell prompt visible -->
+<!-- Example: ![Boot Screen](screenshots/boot.png) -->
+
+To capture: Run `make run` in QEMU, take a screenshot of the terminal showing the boot process and shell prompt (`[user@os]$`).
+
+### Architecture Diagram
+
+```mermaid
+flowchart TB
+    subgraph Boot["Boot Process"]
+        GRUB[Multiboot] --> PM[Protected Mode]
+        PM --> GDT[GDT Setup]
+        GDT --> IDT[IDT + Interrupts]
+    end
+
+    subgraph Kernel["Kernel Core"]
+        IDT --> PIT[PIT Timer]
+        IDT --> KB[Keyboard Driver]
+        IDT --> FB[Framebuffer]
+        Paging[Memory Paging] --> Alloc[Page Frame Allocator]
+        Scheduler[Round-Robin] --> PCB[Process Control Blocks]
+    end
+
+    subgraph FS["Filesystem"]
+        ATA[ATA PIO Driver] --> EXT2[EXT2 Filesystem]
+        EXT2 --> VFS[Virtual File Operations]
+    end
+
+    subgraph User["User Mode"]
+        VFS --> Shell[Interactive Shell]
+        Scheduler --> UserMode[Ring 3 Execution]
+    end
+```
+
+## Quick Start
+
+```bash
+make clean && make
+make run  # Boots in QEMU
+```
